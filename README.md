@@ -66,7 +66,7 @@ Cada cambio se guarda al momento y vale desde la siguiente pulsación.
 ### Grupos
 
 La rueda principal solo muestra grupos (por ejemplo *Multimedia* con Twitch, YouTube y Kick, o
-*Agentes de IA* con Claude y ChatGPT), como baldosas apiladas. Sin ícono propio, un grupo
+*Agentes de IA* con Claude y ChatGPT), como botones distribuidos sobre una órbita. Sin ícono propio, un grupo
 muestra en miniatura los de sus primeros cuatro accesos. Al abrir uno, la rueda se vuelve a
 desplegar con sus apps y su nombre bajo el botón central.
 
@@ -75,19 +75,19 @@ En **Activación → Elegir con** hay dos modos:
 | | Soltar el botón | Clic |
 |---|---|---|
 | Abrir la rueda | Mantén el botón | Mantén el botón y suéltalo: la rueda queda abierta |
-| Abrir un grupo | Mantén la dirección estable durante 650 ms | Clic izquierdo sobre él |
+| Abrir un grupo | Mantén la dirección estable durante 450 ms | Clic izquierdo sobre él |
 | Abrir una app | Apúntala y suelta | Clic izquierdo sobre ella |
 | Volver | Quédate un instante en el centro (muestra una flecha) | Clic derecho, o clic en el centro |
 | Cerrar | Suelta en el centro o pulsa **Escape** | Clic derecho o en el centro (en la rueda principal), **Escape** o el botón otra vez |
 
-Como en todo Orbyt, cuenta la dirección del puntero, no hace falta acertar encima de la baldosa.
+Como en todo Orbyt, cuenta la dirección del puntero, no hace falta acertar encima del botón.
 En modo clic, los clics con la rueda abierta son para Orbyt y no llegan a la ventana de debajo.
 
 ### Íconos
 
 Cada acceso usa su ícono automático, salvo que elijas otro con **Elegir…** en el editor:
 
-- **Apps, programas, carpetas y archivos**: el ícono que da Windows, pedido a 256 px. Se prueban
+- **Apps, programas, carpetas y archivos**: el ícono que da Windows, pedido a 128 px. Se prueban
   dos variantes y se queda la que no tenga halo blanco (el borde claro que deja un ícono
   recortado sobre fondo blanco).
 - **Webs**: el favicon del sitio. Se descarga una vez en segundo plano (solo se envía el nombre
@@ -153,12 +153,12 @@ puede editar a mano: se crea con ejemplos la primera vez y se relee en cada puls
 | `main.rs` | Ventana de la rueda, bucle de mensajes, abrir/cerrar, grupos y animación |
 | `hook.rs` | Ganchos globales `WH_MOUSE_LL` / `WH_KEYBOARD_LL`, botón configurable |
 | `wheel.rs` | Geometría: qué sector cae bajo el puntero |
-| `render.rs` | La rueda de baldosas, sobre una ventana layered (y en la vista previa) |
+| `render.rs` | La rueda de botones orbitales, sobre una ventana layered (y en la vista previa) |
 | `settings.rs` | Ventana de ajustes: barra lateral, secciones, listas y campos de texto propios |
 | `ui.rs` | Kit de dibujo compartido: tema oscuro, formas, texto, glifos de Segoe Fluent Icons |
 | `autostart.rs` | Iniciar con Windows (clave `Run` del usuario) |
 | `apps.rs` | Lista de apps instaladas desde `shell:AppsFolder`, en segundo plano |
-| `icons.rs` | Íconos: shell a 256 px sin halo, favicons, íconos de archivos, WIC y caché |
+| `icons.rs` | Íconos: shell a 128 px sin halo, favicons, íconos de archivos, WIC y caché |
 | `web.rs` | Descarga de favicons con WinHTTP y caché en disco |
 | `lucide.rs` | Búsqueda de íconos Lucide y lectura de sus trazos SVG |
 | `lucide_datos.rs` | Datos de Lucide, generados por `scripts/generar_lucide.py` |
