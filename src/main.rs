@@ -52,7 +52,7 @@ const TIMER_DEMO: usize = 3;
 /// Duración de la animación de apertura.
 const APERTURA_MS: f32 = 140.0;
 /// Cuánto hay que apuntar a un grupo para que se abra.
-const ESPERA_GRUPO_MS: u128 = 650;
+const ESPERA_GRUPO_MS: u128 = 450;
 /// Cuánto hay que quedarse en el centro, dentro de un grupo, para volver a la rueda principal.
 const ESPERA_VOLVER_MS: u128 = 300;
 
