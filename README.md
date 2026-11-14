@@ -87,7 +87,7 @@ En modo clic, los clics con la rueda abierta son para Orbyt y no llegan a la ven
 
 Cada acceso usa su ícono automático, salvo que elijas otro con **Elegir…** en el editor:
 
-- **Apps, programas, carpetas y archivos**: el ícono que da Windows, pedido a 256 px. Se prueban
+- **Apps, programas, carpetas y archivos**: el ícono que da Windows, pedido a 128 px. Se prueban
   dos variantes y se queda la que no tenga halo blanco (el borde claro que deja un ícono
   recortado sobre fondo blanco).
 - **Webs**: el favicon del sitio. Se descarga una vez en segundo plano (solo se envía el nombre
@@ -158,7 +158,7 @@ puede editar a mano: se crea con ejemplos la primera vez y se relee en cada puls
 | `ui.rs` | Kit de dibujo compartido: tema oscuro, formas, texto, glifos de Segoe Fluent Icons |
 | `autostart.rs` | Iniciar con Windows (clave `Run` del usuario) |
 | `apps.rs` | Lista de apps instaladas desde `shell:AppsFolder`, en segundo plano |
-| `icons.rs` | Íconos: shell a 256 px sin halo, favicons, íconos de archivos, WIC y caché |
+| `icons.rs` | Íconos: shell a 128 px sin halo, favicons, íconos de archivos, WIC y caché |
 | `web.rs` | Descarga de favicons con WinHTTP y caché en disco |
 | `lucide.rs` | Búsqueda de íconos Lucide y lectura de sus trazos SVG |
 | `lucide_datos.rs` | Datos de Lucide, generados por `scripts/generar_lucide.py` |

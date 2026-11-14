@@ -22,7 +22,8 @@ pub fn radio_anillo(n: usize) -> f32 {
 
 /// Distancia del centro al borde exterior de la rueda (para que no se salga del monitor).
 pub fn alcance(n: usize) -> f32 {
-    radio_anillo(n) + BOTON / 2.0 + 48.0
+    // Reserva espacio para la etiqueta exterior del botón seleccionado.
+    radio_anillo(n) + BOTON / 2.0 + 150.0
 }
 
 /// Ángulo (radianes) del acceso `i` de `n`. El 0 apunta hacia arriba y el resto sigue en el
@@ -93,7 +94,7 @@ mod tests {
     #[test]
     fn el_alcance_deja_espacio_para_el_boton_y_su_etiqueta() {
         let n = 8;
-        assert!(alcance(n) >= radio_anillo(n) + BOTON / 2.0 + 40.0);
+        assert!(alcance(n) >= radio_anillo(n) + BOTON / 2.0 + 140.0);
     }
 
     #[test]

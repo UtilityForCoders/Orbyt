@@ -79,6 +79,8 @@ struct Rueda {
 
 struct App {
     hwnd: HWND,
+    /// Capa negra de opacidad constante; evita incluir todo el monitor en el bitmap de la rueda.
+    fondo: HWND,
     cfg: Config,
     /// Baldosas de la rueda principal: grupos primero y después accesos sueltos.
     raiz: Vec<Baldosa>,
@@ -152,6 +154,32 @@ fn main() -> Result<()> {
             ..Default::default()
         };
         RegisterClassW(&clase);
+        let clase_fondo = WNDCLASSW {
+            lpfnWndProc: Some(wndproc_fondo),
+            hInstance: instancia,
+            lpszClassName: w!("OrbytFondo"),
+            hbrBackground: HBRUSH(GetStockObject(BLACK_BRUSH).0),
+            ..Default::default()
+        };
+        RegisterClassW(&clase_fondo);
+
+        // El oscurecimiento usa una ventana sólida con alfa constante. El compositor puede
+        // mantenerla sin copiar un bitmap de pantalla completa en cada fotograma de la rueda.
+        let fondo = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            w!("OrbytFondo"),
+            w!("Orbyt"),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(instancia),
+            None,
+        )?;
+        SetLayeredWindowAttributes(fondo, COLORREF(0), 72, LWA_ALPHA)?;
 
         // La rueda nunca toma el foco ni recibe clics: la ventana en la que estabas sigue siendo
         // la activa y el teclado llega por el gancho.
@@ -172,6 +200,7 @@ fn main() -> Result<()> {
 
         let mut app = App {
             hwnd,
+            fondo,
             cfg: Config::default(),
             raiz: Vec::new(),
             grupos: Vec::new(),
@@ -212,6 +241,10 @@ fn main() -> Result<()> {
         APP.with(|a| a.borrow_mut().take());
     }
     Ok(())
+}
+
+unsafe extern "system" fn wndproc_fondo(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -347,21 +380,35 @@ fn abrir(app: &mut App) {
         let escala = dpi_x as f32 / 96.0 * app.cfg.tamano;
 
         let m = info.rcMonitor;
-        let (ancho, alto) = (m.right - m.left, m.bottom - m.top);
-        let centro = match app.cfg.abrir_en {
-            AbrirEn::Centro => (ancho as f32 / 2.0, alto as f32 / 2.0),
-            AbrirEn::Cursor => {
-                // Bajo el puntero, pero sin que la rueda se salga del monitor.
-                // El margen cuenta el nivel más grande: al abrir un grupo la rueda no se mueve.
-                let mayor = app.grupos.iter().map(Vec::len).chain([app.raiz.len()]).max().unwrap_or(0);
-                let margen = wheel::alcance(mayor) * escala;
-                let limitar = |v: f32, max: f32| if max <= 2.0 * margen { max / 2.0 } else { v.clamp(margen, max - margen) };
-                (limitar((p.x - m.left) as f32, ancho as f32), limitar((p.y - m.top) as f32, alto as f32))
+        let (ancho_monitor, alto_monitor) = (m.right - m.left, m.bottom - m.top);
+        // El bitmap contiene solo la rueda y sus etiquetas, no el monitor completo. En 4K esto
+        // reduce cada actualización de unos 32 MiB a alrededor de 1–2 MiB.
+        let mayor = app.grupos.iter().map(Vec::len).chain([app.raiz.len()]).max().unwrap_or(0);
+        let margen = wheel::alcance(mayor) * escala;
+        let ancho = ((2.0 * margen).ceil() as i32).min(ancho_monitor);
+        let alto = ((2.0 * margen).ceil() as i32).min(alto_monitor);
+        let limitar = |v: f32, minimo: i32, maximo: i32, lado: i32| {
+            let mitad = lado as f32 / 2.0;
+            if maximo - minimo <= lado {
+                (minimo + maximo) as f32 / 2.0
+            } else {
+                v.clamp(minimo as f32 + mitad, maximo as f32 - mitad)
             }
         };
+        let centro_pantalla = match app.cfg.abrir_en {
+            AbrirEn::Centro => ((m.left + m.right) as f32 / 2.0, (m.top + m.bottom) as f32 / 2.0),
+            AbrirEn::Cursor => {
+                (limitar(p.x as f32, m.left, m.right, ancho), limitar(p.y as f32, m.top, m.bottom, alto))
+            }
+        };
+        let origen = POINT {
+            x: (centro_pantalla.0 - ancho as f32 / 2.0).round() as i32,
+            y: (centro_pantalla.1 - alto as f32 / 2.0).round() as i32,
+        };
+        let centro = (centro_pantalla.0 - origen.x as f32, centro_pantalla.1 - origen.y as f32);
 
         app.rueda = Some(Rueda {
-            origen: POINT { x: m.left, y: m.top },
+            origen,
             ancho,
             alto,
             centro,
@@ -374,6 +421,19 @@ fn abrir(app: &mut App) {
             apuntado: None,
             en_centro: None,
         });
+        if app.cfg.oscurecer {
+            let _ = SetWindowPos(
+                app.fondo,
+                Some(HWND_TOPMOST),
+                m.left,
+                m.top,
+                ancho_monitor,
+                alto_monitor,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        } else {
+            let _ = ShowWindow(app.fondo, SW_HIDE);
+        }
         // El primer fotograma se pinta antes de mostrar la ventana, para que nunca se vea vacía.
         pintar(app);
         let _ = ShowWindow(app.hwnd, SW_SHOWNOACTIVATE);
@@ -386,6 +446,7 @@ fn cerrar(app: &mut App) {
     unsafe {
         ritmo::parar();
         let _ = ShowWindow(app.hwnd, SW_HIDE);
+        let _ = ShowWindow(app.fondo, SW_HIDE);
     }
     app.rueda = None;
 }
@@ -435,7 +496,7 @@ fn actualizar(app: &mut App) {
     let Some(nivel) = app.rueda.as_ref().map(|r| r.nivel) else { return };
     let baldosas = app.baldosas(nivel);
     let n = baldosas.len();
-    let es_grupo: Vec<bool> = baldosas.iter().map(Baldosa::es_grupo).collect();
+    let cantidad_grupos = if nivel.is_none() { app.cfg.grupos.len() } else { 0 };
     let zona = app.cfg.zona_central;
     // En modo clic se navega con clics, no esperando.
     let por_espera = app.cfg.modo == Modo::Soltar;
@@ -456,7 +517,7 @@ fn actualizar(app: &mut App) {
     let mut cambio: Option<Option<usize>> = None;
     match r.nivel {
         _ if !por_espera => {}
-        None => match seleccion.filter(|&i| es_grupo[i]) {
+        None => match seleccion.filter(|&i| i < cantidad_grupos) {
             Some(i) => {
                 let desde = match r.apuntado {
                     Some((g, t)) if g == i => t,
@@ -522,7 +583,6 @@ fn pintar(app: &mut App) {
         seleccion: r.seleccion,
         progreso: r.progreso,
         progreso_grupo: r.progreso_grupo,
-        oscurecer: app.cfg.oscurecer,
         radio_central: app.cfg.zona_central * r.escala,
         mostrar_nombres: app.cfg.mostrar_nombres,
         color_hover: app.cfg.color_hover,

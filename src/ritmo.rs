@@ -1,17 +1,15 @@
-//! Pulso de fotogramas al ritmo de la pantalla.
+//! Pulso de fotogramas limitado a unos 60 Hz.
 //!
-//! Mientras la rueda está abierta, un hilo aparte espera a cada composición del escritorio
-//! (`DwmFlush`, que vuelve una vez por refresco) y avisa a la ventana con un mensaje. Así la
-//! animación va a 60, 120, 144 Hz o lo que dé el monitor, en lugar de al paso fijo de ~15,6 ms
-//! de `SetTimer`. La espera no puede hacerse en el hilo principal: ahí viven los ganchos de
-//! entrada, que tienen que responder enseguida.
+//! Mientras la rueda está abierta, un hilo aparte avisa a la ventana. Limitar el pulso evita que
+//! monitores de 144 o 240 Hz multipliquen el trabajo sin aportar una diferencia apreciable en
+//! una animación tan corta. La espera no puede hacerse en el hilo principal: ahí viven los
+//! ganchos de entrada, que tienen que responder enseguida.
 
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::OnceLock;
 use std::thread::{self, Thread};
 use std::time::Duration;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP};
 
 /// Toca pintar un fotograma.
@@ -24,7 +22,7 @@ static EN_COLA: AtomicBool = AtomicBool::new(false);
 static VENTANA: AtomicIsize = AtomicIsize::new(0);
 static HILO: OnceLock<Thread> = OnceLock::new();
 
-/// Empieza a mandar `WM_ORBYT_FOTOGRAMA` a `hwnd` en cada refresco de pantalla.
+/// Empieza a mandar `WM_ORBYT_FOTOGRAMA` a `hwnd` hasta unas 60 veces por segundo.
 pub fn empezar(hwnd: HWND) {
     VENTANA.store(hwnd.0 as isize, Ordering::SeqCst);
     EN_COLA.store(false, Ordering::SeqCst);
@@ -48,10 +46,7 @@ fn bucle() {
         while !ACTIVO.load(Ordering::SeqCst) {
             thread::park();
         }
-        // Sin composición (no debería pasar en Windows 10/11) se cae a ~60 Hz.
-        if unsafe { DwmFlush() }.is_err() {
-            thread::sleep(Duration::from_millis(16));
-        }
+        thread::park_timeout(Duration::from_millis(16));
         if ACTIVO.load(Ordering::SeqCst) && !EN_COLA.swap(true, Ordering::SeqCst) {
             let hwnd = HWND(VENTANA.load(Ordering::SeqCst) as *mut _);
             if unsafe { PostMessageW(Some(hwnd), WM_ORBYT_FOTOGRAMA, WPARAM(0), LPARAM(0)) }.is_err() {

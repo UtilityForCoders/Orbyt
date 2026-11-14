@@ -3,7 +3,7 @@
 //! Cuatro fuentes, según el acceso:
 //!
 //! - **Apps, programas, carpetas y archivos**: el shell (`IShellItemImageFactory`), que entiende
-//!   rutas y apps de `shell:AppsFolder` (también las de la Store). Se piden a 256 px en dos
+//!   rutas y apps de `shell:AppsFolder` (también las de la Store). Se piden a 128 px en dos
 //!   variantes y se queda la que no tenga halo blanco (ver `halo`).
 //! - **Webs**: el favicon del sitio (`web.rs`), descargado una vez y guardado en disco. Mientras no
 //!   llega, se usa el ícono del navegador predeterminado.
@@ -12,7 +12,7 @@
 //! - **Lucide** (`lucide:globe`): un glifo vectorial; no tiene píxeles, lo dibuja el pintor.
 //!
 //! Los píxeles se guardan BGRA premultiplicado (lo que espera Direct2D) junto con copias a mitad
-//! de tamaño: reducir 256 px a 30 de una vez se ve dentado, y así el pintor usa la copia más
+//! de tamaño: reducir 128 px a 30 de una vez se ve dentado, y así el pintor usa la copia más
 //! cercana al tamaño en pantalla.
 
 use crate::config::{expandir, Acceso};
@@ -29,9 +29,9 @@ use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, PrivateExtractIconsW, HICON, ICONINFO};
 
-/// Lado al que se normalizan los íconos: lo más grande que suele traer una app, y suficiente
-/// para la rueda al 140 % en una pantalla al 200 %.
-pub const LADO: i32 = 256;
+/// Lado al que se normalizan los íconos. 128 px cubre el tamaño máximo habitual de la rueda y
+/// reduce a una cuarta parte la memoria de cada pirámide respecto a 256 px.
+pub const LADO: i32 = 128;
 /// Por debajo de este lado ya no se hacen más copias reducidas.
 const LADO_MIN: u32 = 16;
 /// Un halo menor que esto se considera limpio y no hace falta probar otra variante.

@@ -1174,7 +1174,6 @@ impl Ajustes {
             seleccion: (!baldosas.is_empty()).then_some(0),
             progreso: 1.0,
             progreso_grupo: 0.45,
-            oscurecer: false,
             radio_central: self.cfg.zona_central * self.cfg.tamano * ajuste,
             mostrar_nombres: self.cfg.mostrar_nombres,
             color_hover: self.cfg.color_hover,

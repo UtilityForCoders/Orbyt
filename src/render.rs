@@ -68,7 +68,6 @@ pub struct Escena<'a> {
     pub progreso: f32,
     /// Progreso de la espera para entrar al grupo seleccionado, de 0 a 1.
     pub progreso_grupo: f32,
-    pub oscurecer: bool,
     /// Radio de la zona central (cancelar), en píxeles físicos.
     pub radio_central: f32,
     pub mostrar_nombres: bool,
@@ -179,16 +178,12 @@ impl Renderer {
     fn dibujar_en(&mut self, e: &Escena) -> Result<()> {
         let target = self.target()?;
         let area = RECT { left: 0, top: 0, right: self.ancho, bottom: self.alto };
-        let (ancho, alto) = (self.ancho as f32, self.alto as f32);
         let Some(p) = self.pintor.as_mut() else { return Ok(()) };
         unsafe {
             target.BindDC(self.dc, &area)?;
             target.BeginDraw();
             target.SetTransform(&Matrix3x2::identity());
             target.Clear(Some(&tema::TRANSPARENTE));
-        }
-        if e.oscurecer {
-            p.rellenar(rect(0.0, 0.0, ancho, alto), 0.0, rgba(0, 0, 0, 0.28 * e.progreso));
         }
         pintar_rueda(p, e);
         unsafe { target.EndDraw(None, None) }
