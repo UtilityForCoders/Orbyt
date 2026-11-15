@@ -44,9 +44,7 @@ pub fn cargar_en_segundo_plano(ventana: HWND, msg_lista: u32, msg_iconos: u32) {
     let ventana = ventana.0 as isize;
     std::thread::spawn(move || {
         let hwnd = HWND(ventana as *mut _);
-        let enviar = |msg: u32, caja: isize| unsafe {
-            PostMessageW(Some(hwnd), msg, WPARAM(0), LPARAM(caja)).is_ok()
-        };
+        let enviar = |msg: u32, caja: isize| unsafe { PostMessageW(Some(hwnd), msg, WPARAM(0), LPARAM(caja)).is_ok() };
 
         unsafe {
             // Hilo propio: necesita su propio COM.
@@ -73,8 +71,9 @@ pub fn cargar_en_segundo_plano(ventana: HWND, msg_lista: u32, msg_iconos: u32) {
             }
         };
         for (i, (mut app, item)) in elementos.into_iter().enumerate() {
-            app.icono = icons::de_item(&item, LADO_LISTA, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT)
-                .map(|(ancho, alto, pixeles)| Arc::new(Icono::nuevo(format!("lista:{}", app.destino), ancho, alto, pixeles)));
+            app.icono = icons::de_item(&item, LADO_LISTA, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT).map(
+                |(ancho, alto, pixeles)| Arc::new(Icono::nuevo(format!("lista:{}", app.destino), ancho, alto, pixeles)),
+            );
             tanda.push((i, app.icono.clone()));
             completa.push(app);
             if tanda.len() == 24 {
@@ -124,7 +123,14 @@ fn recorrer() -> Vec<(AppInstalada, IShellItem)> {
             if nombre.is_empty() || id.is_empty() {
                 continue;
             }
-            apps.push((AppInstalada { nombre, destino: format!("shell:AppsFolder\\{id}"), icono: None }, item));
+            apps.push((
+                AppInstalada {
+                    nombre,
+                    destino: format!("shell:AppsFolder\\{id}"),
+                    icono: None,
+                },
+                item,
+            ));
         }
     }
     apps
@@ -141,7 +147,11 @@ mod tests {
     use super::*;
 
     fn app(nombre: &str) -> AppInstalada {
-        AppInstalada { nombre: nombre.into(), destino: format!("shell:AppsFolder\\{nombre}"), icono: None }
+        AppInstalada {
+            nombre: nombre.into(),
+            destino: format!("shell:AppsFolder\\{nombre}"),
+            icono: None,
+        }
     }
 
     #[test]

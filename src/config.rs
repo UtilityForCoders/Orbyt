@@ -168,7 +168,11 @@ impl Config {
     /// Lleva cada valor a su rango; un JSON editado a mano no puede romper la rueda.
     pub fn normalizar(&mut self) {
         self.retardo_ms = self.retardo_ms.clamp(RETARDO_MIN, RETARDO_MAX);
-        self.tamano = if self.tamano.is_finite() { self.tamano.clamp(TAMANO_MIN, TAMANO_MAX) } else { 1.0 };
+        self.tamano = if self.tamano.is_finite() {
+            self.tamano.clamp(TAMANO_MIN, TAMANO_MAX)
+        } else {
+            1.0
+        };
         self.zona_central = if self.zona_central.is_finite() {
             self.zona_central.clamp(ZONA_MIN, ZONA_MAX)
         } else {
@@ -182,7 +186,14 @@ impl Config {
         // Los accesos sueltos de antes se vuelven un grupo más, editable y que se puede quitar.
         if !self.accesos.is_empty() {
             let accesos = std::mem::take(&mut self.accesos);
-            self.grupos.insert(0, Grupo { nombre: "Principal".into(), icono: None, accesos });
+            self.grupos.insert(
+                0,
+                Grupo {
+                    nombre: "Principal".into(),
+                    icono: None,
+                    accesos,
+                },
+            );
         }
     }
 }
@@ -247,7 +258,9 @@ impl Default for Config {
 }
 
 pub fn ruta() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     base.join("Orbyt").join("config.json")
 }
 
@@ -389,8 +402,10 @@ mod tests {
 
     #[test]
     fn normalizar_lleva_los_valores_a_su_rango() {
-        let mut cfg: Config =
-            serde_json::from_str(r#"{"retardo_ms":5,"tamano":9.0,"zona_central":-3,"opacidad_fondo":0.0,"accesos":[]}"#).unwrap();
+        let mut cfg: Config = serde_json::from_str(
+            r#"{"retardo_ms":5,"tamano":9.0,"zona_central":-3,"opacidad_fondo":0.0,"accesos":[]}"#,
+        )
+        .unwrap();
         cfg.normalizar();
         assert_eq!(cfg.retardo_ms, RETARDO_MIN);
         assert_eq!(cfg.tamano, TAMANO_MAX);

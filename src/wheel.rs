@@ -104,7 +104,11 @@ mod tests {
                 let ang_centro = angulo_centro(i, n);
                 let (x, y) = punto_arco(100.0, ang_centro);
                 let hit = sector_en(x, y, n, ZONA);
-                assert_eq!(hit, Some(i), "Para n={n}, apuntar al centro del sector {i} debe seleccionarlo");
+                assert_eq!(
+                    hit,
+                    Some(i),
+                    "Para n={n}, apuntar al centro del sector {i} debe seleccionarlo"
+                );
             }
         }
     }

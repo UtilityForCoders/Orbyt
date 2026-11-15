@@ -8,17 +8,17 @@
 //! tienen que volver enseguida, así que no deciden nada: actualizan `ESTADO` y avisan a la ventana
 //! con `PostMessageW`. La ventana hace el trabajo en el hilo principal.
 
+use crate::config::Boton;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU8, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::thread::JoinHandle;
+use windows::core::PWSTR;
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Threading::{
     GetCurrentThread, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, SetThreadPriority,
     PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, THREAD_PRIORITY_HIGHEST,
 };
-use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
-use crate::config::Boton;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -58,7 +58,11 @@ static ULTIMA_EXCLUIDA: Mutex<(isize, bool)> = Mutex::new((0, false));
 
 pub fn poner_exclusiones(pausar_pantalla_completa: bool, excluidas: &[String]) {
     PAUSAR_PANTALLA_COMPLETA.store(pausar_pantalla_completa, Ordering::Relaxed);
-    let lista: Vec<String> = excluidas.iter().map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect();
+    let lista: Vec<String> = excluidas
+        .iter()
+        .map(|e| e.trim().to_lowercase())
+        .filter(|e| !e.is_empty())
+        .collect();
     *EXCLUIDAS.lock().unwrap_or_else(|e| e.into_inner()) = lista;
     *ULTIMA_EXCLUIDA.lock().unwrap_or_else(|e| e.into_inner()) = (0, false);
 }
@@ -85,7 +89,10 @@ fn pantalla_completa(ventana: HWND) -> bool {
             return false;
         }
         let mut rect = RECT::default();
-        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
         if GetWindowRect(ventana, &mut rect).is_err()
             || !GetMonitorInfoW(MonitorFromWindow(ventana, MONITOR_DEFAULTTONEAREST), &mut info).as_bool()
         {
@@ -139,7 +146,11 @@ pub fn poner_modo_clic(clic: bool) {
 
 /// La rueda se cerró: si el botón sigue pulsado, falta tragar su liberación.
 pub fn terminar() {
-    let estado = if BOTON_ABAJO.load(Ordering::SeqCst) { CANCELADA } else { INACTIVO };
+    let estado = if BOTON_ABAJO.load(Ordering::SeqCst) {
+        CANCELADA
+    } else {
+        INACTIVO
+    };
     ESTADO.store(estado, Ordering::SeqCst);
 }
 static VENTANA: AtomicIsize = AtomicIsize::new(0);
@@ -246,7 +257,10 @@ pub fn empaquetar(x: i32, y: i32) -> isize {
 }
 
 pub fn desempaquetar(l: isize) -> (i32, i32) {
-    ((l as u32 & 0xFFFF) as u16 as i16 as i32, ((l as u32 >> 16) & 0xFFFF) as u16 as i16 as i32)
+    (
+        (l as u32 & 0xFFFF) as u16 as i16 as i32,
+        ((l as u32 >> 16) & 0xFFFF) as u16 as i16 as i32,
+    )
 }
 
 /// Botón que abre la rueda: 0 central, 1 lateral "atrás", 2 lateral "adelante".
@@ -404,12 +418,35 @@ mod tests {
 
     #[test]
     fn solo_cubrir_el_monitor_sin_barra_de_titulo_es_pantalla_completa() {
-        let monitor = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+        let monitor = RECT {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
         let (popup, normal) = (WS_POPUP.0, WS_OVERLAPPEDWINDOW.0);
         assert!(cubre_monitor(&monitor, &monitor, popup));
         // Maximizada: sobresale unos píxeles pero conserva la barra de título.
-        assert!(!cubre_monitor(&RECT { left: -8, top: -8, right: 1928, bottom: 1088 }, &monitor, normal));
-        assert!(!cubre_monitor(&RECT { left: 0, top: 0, right: 1920, bottom: 1040 }, &monitor, popup));
+        assert!(!cubre_monitor(
+            &RECT {
+                left: -8,
+                top: -8,
+                right: 1928,
+                bottom: 1088
+            },
+            &monitor,
+            normal
+        ));
+        assert!(!cubre_monitor(
+            &RECT {
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1040
+            },
+            &monitor,
+            popup
+        ));
     }
 
     #[test]

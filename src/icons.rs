@@ -92,7 +92,11 @@ fn reducir(n: &Nivel) -> Nivel {
             }
         }
     }
-    Nivel { ancho: an, alto: al, pixeles: p }
+    Nivel {
+        ancho: an,
+        alto: al,
+        pixeles: p,
+    }
 }
 
 pub type IconoRef = Arc<Icono>;
@@ -221,8 +225,13 @@ fn buscar_en_path(nombre: &str) -> Option<String> {
 /// limpia.
 pub fn mejor_de_item(item: &IShellItem) -> Option<Pixeles> {
     let mut mejor: Option<(Pixeles, f32)> = None;
-    for flags in [SIIGBF_BIGGERSIZEOK | SIIGBF_ICONONLY, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT] {
-        let Some(img) = de_item(item, LADO, flags) else { continue };
+    for flags in [
+        SIIGBF_BIGGERSIZEOK | SIIGBF_ICONONLY,
+        SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT,
+    ] {
+        let Some(img) = de_item(item, LADO, flags) else {
+            continue;
+        };
         let h = halo(&img.2, img.0, img.1);
         if mejor.as_ref().is_none_or(|(_, hm)| h < *hm) {
             mejor = Some((img, h));
@@ -248,7 +257,11 @@ pub fn de_item(item: &IShellItem, lado: i32, flags: SIIGBF) -> Option<Pixeles> {
 /// Nada mayor que `LADO`: el shell a veces devuelve imágenes enormes con `BIGGERSIZEOK`.
 fn normalizar((mut an, mut al, mut px): Pixeles) -> Pixeles {
     while an > LADO as u32 && an % 2 == 0 && al % 2 == 0 {
-        let n = reducir(&Nivel { ancho: an, alto: al, pixeles: px });
+        let n = reducir(&Nivel {
+            ancho: an,
+            alto: al,
+            pixeles: px,
+        });
         (an, al, px) = (n.ancho, n.alto, n.pixeles);
     }
     (an, al, px)
@@ -286,7 +299,11 @@ pub fn cantidad_en_archivo(ruta: &str) -> u32 {
     }
     nombre[..u.len()].copy_from_slice(&u);
     let n = unsafe { PrivateExtractIconsW(&nombre, 0, 32, 32, None, None, 0) };
-    if n == u32::MAX { 0 } else { n }
+    if n == u32::MAX {
+        0
+    } else {
+        n
+    }
 }
 
 /// Decodifica un PNG, ICO, JPG... con WIC a BGRA premultiplicado. En un ICO elige la imagen más
@@ -296,7 +313,9 @@ pub fn decodificar(bytes: &[u8]) -> Option<Pixeles> {
         let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
         let flujo = wic.CreateStream().ok()?;
         flujo.InitializeFromMemory(bytes).ok()?;
-        let dec = wic.CreateDecoderFromStream(&flujo, std::ptr::null(), WICDecodeMetadataCacheOnDemand).ok()?;
+        let dec = wic
+            .CreateDecoderFromStream(&flujo, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
+            .ok()?;
         let mut mejor = (0u32, 0u32);
         for i in 0..dec.GetFrameCount().ok()? {
             let f = dec.GetFrame(i).ok()?;
@@ -308,8 +327,15 @@ pub fn decodificar(bytes: &[u8]) -> Option<Pixeles> {
         }
         let cuadro = dec.GetFrame(mejor.0).ok()?;
         let conv = wic.CreateFormatConverter().ok()?;
-        conv.Initialize(&cuadro, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)
-            .ok()?;
+        conv.Initialize(
+            &cuadro,
+            &GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone,
+            None,
+            0.0,
+            WICBitmapPaletteTypeCustom,
+        )
+        .ok()?;
         let (mut an, mut al) = (0, 0);
         conv.GetSize(&mut an, &mut al).ok()?;
         if an == 0 || al == 0 || an > 4096 || al > 4096 {
@@ -390,7 +416,11 @@ fn leer_dib(bitmap: HBITMAP) -> Option<Pixeles> {
     }
     unsafe {
         let mut bm = BITMAP::default();
-        let leido = GetObjectW(bitmap.into(), std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut BITMAP as *mut _));
+        let leido = GetObjectW(
+            bitmap.into(),
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut bm as *mut BITMAP as *mut _),
+        );
         if leido == 0 || bm.bmWidth <= 0 || bm.bmHeight == 0 {
             return None;
         }
@@ -409,7 +439,15 @@ fn leer_dib(bitmap: HBITMAP) -> Option<Pixeles> {
         };
         let mut datos = vec![0u8; (an * al * 4) as usize];
         let dc = CreateCompatibleDC(None);
-        let lineas = GetDIBits(dc, bitmap, 0, al as u32, Some(datos.as_mut_ptr().cast()), &mut bmi, DIB_RGB_COLORS);
+        let lineas = GetDIBits(
+            dc,
+            bitmap,
+            0,
+            al as u32,
+            Some(datos.as_mut_ptr().cast()),
+            &mut bmi,
+            DIB_RGB_COLORS,
+        );
         let _ = DeleteDC(dc);
         if lineas == 0 {
             return None;
@@ -423,7 +461,11 @@ fn leer_dib(bitmap: HBITMAP) -> Option<Pixeles> {
 /// estaban premultiplicados y se premultiplican.
 fn premultiplicar(datos: &mut [u8]) {
     let con_alfa = datos.as_chunks::<4>().0.iter().any(|p| p[3] != 0);
-    let directo = datos.as_chunks::<4>().0.iter().any(|p| p[0] > p[3] || p[1] > p[3] || p[2] > p[3]);
+    let directo = datos
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|p| p[0] > p[3] || p[1] > p[3] || p[2] > p[3]);
     for p in datos.as_chunks_mut::<4>().0 {
         if !con_alfa {
             p[3] = 255;
@@ -465,7 +507,11 @@ pub fn halo(px: &[u8], ancho: u32, alto: u32) -> f32 {
         return 0.0;
     }
     let f_borde = borde_claro as f32 / borde as f32;
-    let f_opaco = if opaco > 0 { opaco_claro as f32 / opaco as f32 } else { 0.0 };
+    let f_opaco = if opaco > 0 {
+        opaco_claro as f32 / opaco as f32
+    } else {
+        0.0
+    };
     (f_borde - f_opaco).max(0.0)
 }
 
@@ -497,7 +543,10 @@ mod tests {
     #[test]
     fn clasifica_destinos() {
         assert!(matches!(fuente("https://github.com/x"), Fuente::Web(h) if h == "github.com"));
-        assert!(matches!(fuente("shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"), Fuente::Elemento(_)));
+        assert!(matches!(
+            fuente("shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"),
+            Fuente::Elemento(_)
+        ));
         assert!(matches!(fuente("C:\\Windows"), Fuente::Elemento(_)));
         assert!(matches!(fuente("ms-settings:"), Fuente::Ninguna));
         assert!(matches!(fuente("notepad.exe"), Fuente::Elemento(_)));
@@ -505,7 +554,10 @@ mod tests {
 
     #[test]
     fn parte_la_referencia_a_un_icono_de_archivo() {
-        assert_eq!(partir_archivo("C:\\W\\shell32.dll,12"), Some(("C:\\W\\shell32.dll".into(), 12)));
+        assert_eq!(
+            partir_archivo("C:\\W\\shell32.dll,12"),
+            Some(("C:\\W\\shell32.dll".into(), 12))
+        );
         assert_eq!(partir_archivo("C:\\a,b\\x.ico"), Some(("C:\\a,b\\x.ico".into(), 0)));
         assert_eq!(partir_archivo("x.dll,-3"), Some(("x.dll".into(), -3)));
         assert_eq!(partir_archivo("  "), None);
@@ -517,7 +569,13 @@ mod tests {
         for y in 0..32 {
             for x in 0..32 {
                 let d = ((x as f32 - 15.5).powi(2) + (y as f32 - 15.5).powi(2)).sqrt();
-                let (c, a) = if d < 12.0 { (interior, 255u32) } else if d < 15.0 { (borde, 120) } else { continue };
+                let (c, a) = if d < 12.0 {
+                    (interior, 255u32)
+                } else if d < 15.0 {
+                    (borde, 120)
+                } else {
+                    continue;
+                };
                 let o = (y * 32 + x) * 4;
                 for i in 0..3 {
                     px[o + i] = (c[i] as u32 * a / 255) as u8;
@@ -570,4 +628,3 @@ mod tests {
         assert!(ic.niveles[2].pixeles.iter().all(|&v| v == 128));
     }
 }
-

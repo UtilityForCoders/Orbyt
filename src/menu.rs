@@ -109,7 +109,10 @@ fn crear(principal: HWND) -> windows::core::Result<()> {
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
         let monitor = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
-        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
         let _ = GetMonitorInfoW(monitor, &mut info);
         let (mut dx, mut dy) = (96u32, 96u32);
         let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
@@ -118,7 +121,11 @@ fn crear(principal: HWND) -> windows::core::Result<()> {
         let al = (alto_total() * s).round() as i32;
         let t = info.rcWork;
         let x = p.x.min(t.right - an).max(t.left);
-        let y = if p.y - al >= t.top { p.y - al } else { p.y.min(t.bottom - al) };
+        let y = if p.y - al >= t.top {
+            p.y - al
+        } else {
+            p.y.min(t.bottom - al)
+        };
 
         let hwnd = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
@@ -138,7 +145,12 @@ fn crear(principal: HWND) -> windows::core::Result<()> {
         // Esquinas redondeadas pequeñas, como los menús de Windows 11 (en Windows 10 falla y
         // quedan rectas).
         let esquinas = DWMWCP_ROUNDSMALL;
-        let _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &esquinas as *const _ as *const _, 4);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &esquinas as *const _ as *const _,
+            4,
+        );
         let oscuro = BOOL(1);
         let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &oscuro as *const _ as *const _, 4);
 
@@ -186,7 +198,10 @@ impl Menu {
             let dpi = self.escala * 96.0;
             let props = D2D1_RENDER_TARGET_PROPERTIES {
                 r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-                pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED },
+                pixelFormat: D2D1_PIXEL_FORMAT {
+                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
                 dpiX: dpi,
                 dpiY: dpi,
                 usage: D2D1_RENDER_TARGET_USAGE_NONE,
@@ -194,16 +209,25 @@ impl Menu {
             };
             let hprops = D2D1_HWND_RENDER_TARGET_PROPERTIES {
                 hwnd: self.hwnd,
-                pixelSize: D2D_SIZE_U { width: cr.right.max(1) as u32, height: cr.bottom.max(1) as u32 },
+                pixelSize: D2D_SIZE_U {
+                    width: cr.right.max(1) as u32,
+                    height: cr.bottom.max(1) as u32,
+                },
                 presentOptions: D2D1_PRESENT_OPTIONS_NONE,
             };
-            let Ok(rt) = (unsafe { self.factory.CreateHwndRenderTarget(&props, &hprops) }) else { return };
+            let Ok(rt) = (unsafe { self.factory.CreateHwndRenderTarget(&props, &hprops) }) else {
+                return;
+            };
             let Ok(base) = rt.cast() else { return };
-            let Ok(pintor) = Pintor::nuevo(base, self.dwrite.clone()) else { return };
+            let Ok(pintor) = Pintor::nuevo(base, self.dwrite.clone()) else {
+                return;
+            };
             self.pintor = Some(pintor);
             self.rt = Some(rt);
         }
-        let (Some(rt), Some(p)) = (self.rt.clone(), self.pintor.as_mut()) else { return };
+        let (Some(rt), Some(p)) = (self.rt.clone(), self.pintor.as_mut()) else {
+            return;
+        };
         let alto = alto_total();
         unsafe {
             rt.BeginDraw();
@@ -223,7 +247,14 @@ impl Menu {
             }
             let cy = r.top + FILA / 2.0;
             p.glifo(*g, r.left + 18.0, cy, 14.0, tema::TEXTO);
-            p.texto(texto, rect(r.left + 40.0, r.top, r.right - r.left - 48.0, FILA), 13.0, Peso::Normal, Alin::Izq, tema::TEXTO);
+            p.texto(
+                texto,
+                rect(r.left + 40.0, r.top, r.right - r.left - 48.0, FILA),
+                13.0,
+                Peso::Normal,
+                Alin::Izq,
+                tema::TEXTO,
+            );
         }
         if unsafe { rt.EndDraw(None, None) }.is_err() {
             self.rt = None;
@@ -248,7 +279,10 @@ fn elegir(hwnd: HWND, principal: HWND, i: usize) {
 }
 
 fn punto(lparam: LPARAM) -> (i32, i32) {
-    ((lparam.0 & 0xFFFF) as i16 as i32, ((lparam.0 >> 16) & 0xFFFF) as i16 as i32)
+    (
+        (lparam.0 & 0xFFFF) as i16 as i32,
+        ((lparam.0 >> 16) & 0xFFFF) as i16 as i32,
+    )
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -266,7 +300,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 let (x, y) = punto(lparam);
                 let i = m.opcion_en(x as f32 / m.escala, y as f32 / m.escala);
                 m.resaltar(i);
-                let mut tme = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+                let mut tme = TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                };
                 let _ = unsafe { TrackMouseEvent(&mut tme) };
             });
             return LRESULT(0);
@@ -279,7 +318,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_LBUTTONUP | WM_RBUTTONUP => {
             let elegida = con_menu(|m| {
                 let (x, y) = punto(lparam);
-                m.opcion_en(x as f32 / m.escala, y as f32 / m.escala).map(|i| (m.principal, i))
+                m.opcion_en(x as f32 / m.escala, y as f32 / m.escala)
+                    .map(|i| (m.principal, i))
             })
             .flatten();
             if let Some((principal, i)) = elegida {
@@ -311,7 +351,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         // Respaldo por si el menú no tiene el foco (y no le llega WM_ACTIVATE): un clic de
         // cualquier botón fuera de él lo cierra.
         WM_TIMER if wparam.0 == TIMER_FUERA => unsafe {
-            let pulsado = [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON].iter().any(|&k| GetAsyncKeyState(k.0 as i32) as u16 & 0x8000 != 0);
+            let pulsado = [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON]
+                .iter()
+                .any(|&k| GetAsyncKeyState(k.0 as i32) as u16 & 0x8000 != 0);
             if pulsado {
                 let mut p = POINT::default();
                 let mut r = RECT::default();

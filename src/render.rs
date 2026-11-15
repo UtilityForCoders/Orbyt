@@ -44,13 +44,24 @@ pub fn baldosas_raiz(cfg: &Config) -> Vec<Baldosa> {
         visual: g.icono.as_deref().and_then(icons::visual_propio),
         grupo: Some(g.accesos.iter().take(4).map(icons::visual).collect()),
     });
-    let sueltos = cfg.accesos.iter().map(|a| Baldosa { nombre: a.nombre.clone(), visual: icons::visual(a), grupo: None });
+    let sueltos = cfg.accesos.iter().map(|a| Baldosa {
+        nombre: a.nombre.clone(),
+        visual: icons::visual(a),
+        grupo: None,
+    });
     grupos.chain(sueltos).collect()
 }
 
 /// Baldosas de un grupo abierto.
 pub fn baldosas_grupo(g: &Grupo) -> Vec<Baldosa> {
-    g.accesos.iter().map(|a| Baldosa { nombre: a.nombre.clone(), visual: icons::visual(a), grupo: None }).collect()
+    g.accesos
+        .iter()
+        .map(|a| Baldosa {
+            nombre: a.nombre.clone(),
+            visual: icons::visual(a),
+            grupo: None,
+        })
+        .collect()
 }
 
 /// Lo que hace falta para pintar un fotograma.
@@ -152,7 +163,10 @@ impl Renderer {
         }
         let props = D2D1_RENDER_TARGET_PROPERTIES {
             r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED },
+            pixelFormat: D2D1_PIXEL_FORMAT {
+                format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+            },
             dpiX: 96.0,
             dpiY: 96.0,
             usage: D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE,
@@ -177,7 +191,12 @@ impl Renderer {
 
     fn dibujar_en(&mut self, e: &Escena) -> Result<()> {
         let target = self.target()?;
-        let area = RECT { left: 0, top: 0, right: self.ancho, bottom: self.alto };
+        let area = RECT {
+            left: 0,
+            top: 0,
+            right: self.ancho,
+            bottom: self.alto,
+        };
         let Some(p) = self.pintor.as_mut() else { return Ok(()) };
         unsafe {
             target.BindDC(self.dc, &area)?;
@@ -214,7 +233,11 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
     let (cx, cy) = e.centro;
     let s = e.escala;
     let n = e.baldosas.len();
-    let op = if e.opacidad_fondo.is_finite() && e.opacidad_fondo > 0.0 { e.opacidad_fondo } else { 0.88 };
+    let op = if e.opacidad_fondo.is_finite() && e.opacidad_fondo > 0.0 {
+        e.opacidad_fondo
+    } else {
+        0.88
+    };
     let radio_final = wheel::radio_anillo(n) * s;
     let radio_orbita = radio_final * (0.58 + 0.42 * e.progreso);
 
@@ -224,16 +247,17 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
         p.borde_circulo(cx, cy, radio_orbita - 2.0 * s, rgba(0, 0, 0, 0.16), 1.0 * s);
     }
 
-    let hover = if e.color_hover == [0, 0, 0] { [112, 78, 168] } else { e.color_hover };
+    let hover = if e.color_hover == [0, 0, 0] {
+        [112, 78, 168]
+    } else {
+        e.color_hover
+    };
     let mut etiqueta: Option<(f32, f32)> = None;
 
     for (i, b) in e.baldosas.iter().enumerate() {
         let activa = e.seleccion == Some(i);
         let angulo = wheel::angulo_centro(i, n);
-        let (px, py) = (
-            cx + radio_orbita * angulo.cos(),
-            cy + radio_orbita * angulo.sin(),
-        );
+        let (px, py) = (cx + radio_orbita * angulo.cos(), cy + radio_orbita * angulo.sin());
         let radio = (wheel::BOTON / 2.0 + if activa { 4.0 } else { 0.0 }) * s;
 
         // Sombra, resplandor y superficie del botón independiente.
@@ -283,7 +307,12 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
                 }
             }
             (None, None) => {
-                let inicial: String = b.nombre.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
+                let inicial: String = b
+                    .nombre
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().collect())
+                    .unwrap_or_default();
                 p.texto(
                     &inicial,
                     rect(px - lado / 2.0, py - lado / 2.0, lado, lado),
@@ -323,7 +352,11 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
         cx,
         cy,
         rc,
-        if en_centro { rgba(211, 190, 244, 0.65) } else { rgba(255, 255, 255, 0.14) },
+        if en_centro {
+            rgba(211, 190, 244, 0.65)
+        } else {
+            rgba(255, 255, 255, 0.14)
+        },
         1.2 * s,
     );
     if e.grupo.is_some() {
@@ -345,7 +378,14 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
         let caja = rect(cx - ancho / 2.0, cy + rc + 10.0 * s, ancho, alto);
         p.rellenar(caja, alto / 2.0, CENTRO_FONDO);
         p.bordear(caja, alto / 2.0, tema::BORDE, 1.0);
-        p.texto(nombre, rect(caja.left + pad, caja.top, ancho - 2.0 * pad, alto), tam, Peso::Semi, Alin::Centro, tema::TEXTO);
+        p.texto(
+            nombre,
+            rect(caja.left + pad, caja.top, ancho - 2.0 * pad, alto),
+            tam,
+            Peso::Semi,
+            Alin::Centro,
+            tema::TEXTO,
+        );
     }
 
     if let (Some((angulo, borde)), Some(i)) = (etiqueta, e.seleccion) {
@@ -374,12 +414,23 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
         p.sombra(caja, alto / 2.0, 0.9);
         p.rellenar(caja, alto / 2.0, rgba(25, 29, 40, 0.97));
         p.bordear(caja, alto / 2.0, rgba(255, 255, 255, 0.18), 1.0);
-        p.texto(nombre, rect(x + pad, y, ancho - 2.0 * pad, alto), tam, Peso::Semi, Alin::Centro, tema::TEXTO);
+        p.texto(
+            nombre,
+            rect(x + pad, y, ancho - 2.0 * pad, alto),
+            tam,
+            Peso::Semi,
+            Alin::Centro,
+            tema::TEXTO,
+        );
     }
 
     if n == 0 {
         let caja = rect(cx - 200.0 * s, cy + 70.0 * s, 400.0 * s, 24.0 * s);
-        let aviso = if e.grupo.is_some() { "Grupo vacío: vuelve al centro para salir" } else { "Sin accesos: agrégalos en los ajustes" };
+        let aviso = if e.grupo.is_some() {
+            "Grupo vacío: vuelve al centro para salir"
+        } else {
+            "Sin accesos: agrégalos en los ajustes"
+        };
         p.texto(aviso, caja, 12.5 * s, Peso::Medio, Alin::Centro, tema::TEXTO);
     }
 }
