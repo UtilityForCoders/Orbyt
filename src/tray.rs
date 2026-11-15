@@ -14,7 +14,9 @@ fn datos(hwnd: HWND) -> NOTIFYICONDATAW {
         uID: 1,
         ..Default::default()
     };
-    let tip: Vec<u16> = "Orbyt: mantén el botón central · clic para configurar".encode_utf16().collect();
+    let tip: Vec<u16> = "Orbyt: mantén el botón central · clic para configurar"
+        .encode_utf16()
+        .collect();
     nid.szTip[..tip.len()].copy_from_slice(&tip);
     nid
 }

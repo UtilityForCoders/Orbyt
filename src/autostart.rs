@@ -18,7 +18,15 @@ pub fn activo() -> bool {
     let mut buf = [0u16; 1024];
     let mut tam = std::mem::size_of_val(&buf) as u32;
     let r = unsafe {
-        RegGetValueW(HKEY_CURRENT_USER, CLAVE, VALOR, RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut tam))
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            CLAVE,
+            VALOR,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut tam),
+        )
     };
     if r != ERROR_SUCCESS {
         return false;

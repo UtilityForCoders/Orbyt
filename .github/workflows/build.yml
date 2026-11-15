@@ -1,0 +1,193 @@
+# CI/CD de Orbyt.
+#
+# - En cada pull request: reglas de Git Flow y Conventional Commits (`politica`), dependencias
+#   sin vulnerabilidades conocidas (`dependencias`) y formato, clippy, pruebas, compilación y
+#   comprobación de arranque y consumo en reposo (`build`).
+# - En develop y main: lo mismo que `build`, sobre lo ya fusionado.
+# - En main: si la versión de Cargo.toml todavía no tiene etiqueta, publica el release con el
+#   .exe y su suma SHA-256 (`release`).
+name: Compilar
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Un PR nuevo cancela la compilación anterior del mismo PR. En main y develop no se cancela
+# nada: cada commit de main puede ser una versión.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Reglas de Git Flow y Conventional Commits para los pull requests.
+  politica:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Hacen falta las etiquetas para saber qué versiones ya se publicaron.
+          fetch-depth: 0
+
+      - name: Rama de origen y destino
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          case "$BASE_REF" in
+            main)
+              [[ $HEAD_REF =~ ^(release|hotfix)/[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+                echo "::error::A main solo entran release/x.y.z y hotfix/x.y.z (esta rama: $HEAD_REF)."
+                exit 1
+              } ;;
+            develop)
+              [[ $HEAD_REF =~ ^(feature|release|hotfix|dependabot)/ ]] || {
+                echo "::error::A develop entran feature/*, release/*, hotfix/* y dependabot/* (esta rama: $HEAD_REF)."
+                exit 1
+              } ;;
+            *)
+              echo "::error::Los pull requests van a develop o a main, no a $BASE_REF."
+              exit 1 ;;
+          esac
+
+      - name: Título en formato Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([a-z0-9-]+\))?!?: [^ ].*$'
+          [[ $TITLE =~ $pattern ]] || {
+            echo "::error::El título \"$TITLE\" no sigue Conventional Commits (ej.: \"fix(hook): no tragar el clic corto\")."
+            exit 1
+          }
+
+      - name: Versión nueva hacia main
+        if: github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::La versión $version ya está publicada: súbela en Cargo.toml."
+            exit 1
+          fi
+          if [[ ${HEAD_REF#*/} != "$version" ]]; then
+            echo "::error::La rama $HEAD_REF no coincide con la versión de Cargo.toml ($version)."
+            exit 1
+          fi
+
+  # Vulnerabilidades conocidas (RustSec) en las dependencias de Cargo.lock.
+  dependencias:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories
+
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # El token de GitHub no queda guardado en la copia para los pasos siguientes.
+          persist-credentials: false
+
+      - name: Caché de Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Formato
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --release --all-targets --locked -- -D warnings
+
+      - name: Pruebas
+        run: cargo test --release --locked
+
+      - name: Compilar la app
+        run: cargo build --release --locked
+
+      # Arranca la app, la deja en reposo y falla si se cae o si gasta más de lo presupuestado.
+      # Los límites van holgados (ver el script); en un equipo normal Orbyt en reposo no llega
+      # al 1 % de un núcleo, usa menos de 10 hilos y unos 10 MB.
+      - name: Arranque y consumo en reposo
+        run: ./scripts/comprobar-app.ps1 -Exe target/release/orbyt.exe -MaxCpu 5 -MaxHilos 24 -MaxMemoriaMB 60 -MaxExeKB 1800
+
+      - name: Suma SHA-256
+        shell: bash
+        run: |
+          mkdir dist
+          cp target/release/orbyt.exe dist/
+          (cd dist && sha256sum orbyt.exe > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Subir el .exe
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: orbyt-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: [build, dependencias]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Versión a publicar
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" >/dev/null 2>&1 \
+            || git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "La versión $version ya está publicada: no hay nada que hacer."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Descargar los archivos compilados
+        if: steps.version.outputs.publish == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: orbyt-${{ github.sha }}
+          path: dist
+
+      - name: Publicar el release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for file in dist/orbyt.exe dist/SHA256SUMS.txt; do
+            [[ -s $file ]] || { echo "::error::Falta $file"; exit 1; }
+          done
+          # Crea la etiqueta vX.Y.Z en este commit junto con el release.
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "Orbyt $VERSION" \
+            --generate-notes \
+            --latest \
+            dist/orbyt.exe dist/SHA256SUMS.txt

@@ -34,14 +34,21 @@ pub fn poner_aviso(ventana: HWND) {
 /// El host de una URL web, en minúsculas, si tiene forma de dominio real.
 pub fn host(url: &str) -> Option<String> {
     let u = url.trim();
-    let resto = u.strip_prefix("https://").or_else(|| u.strip_prefix("http://")).or_else(|| {
-        let l = u.to_ascii_lowercase();
-        (l.starts_with("https://") || l.starts_with("http://")).then(|| &u[u.find("://").unwrap() + 3..])
-    })?;
+    let resto = u
+        .strip_prefix("https://")
+        .or_else(|| u.strip_prefix("http://"))
+        .or_else(|| {
+            let l = u.to_ascii_lowercase();
+            (l.starts_with("https://") || l.starts_with("http://")).then(|| &u[u.find("://").unwrap() + 3..])
+        })?;
     let autoridad = resto.split(['/', '?', '#']).next()?;
     // Sin usuario ni contraseña, y sin puerto.
     let sin_usuario = autoridad.rsplit('@').next()?;
-    let h = sin_usuario.split(':').next()?.trim_end_matches('.').to_ascii_lowercase();
+    let h = sin_usuario
+        .split(':')
+        .next()?
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
     let valido = h.len() >= 4
         && h.len() <= 253
         && h.contains('.')
@@ -53,7 +60,9 @@ pub fn host(url: &str) -> Option<String> {
 }
 
 fn carpeta() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     base.join("Orbyt").join("favicons")
 }
 
@@ -85,7 +94,9 @@ pub fn pedir(host: String) {
             ("icons.duckduckgo.com", format!("/ip3/{host}.ico")),
         ];
         for (servidor, ruta) in fuentes {
-            let Some(bytes) = descargar(servidor, &ruta) else { continue };
+            let Some(bytes) = descargar(servidor, &ruta) else {
+                continue;
+            };
             // Solo se guarda si de verdad es una imagen que Windows sabe leer.
             if crate::icons::decodificar(&bytes).is_none() {
                 continue;
@@ -128,7 +139,12 @@ fn descargar(servidor: &str, ruta: &str) -> Option<Vec<u8>> {
             return None;
         }
         let _ = WinHttpSetTimeouts(sesion.0, 4000, 4000, 4000, 6000);
-        let conexion = Asa(WinHttpConnect(sesion.0, &HSTRING::from(servidor), INTERNET_DEFAULT_HTTPS_PORT, 0));
+        let conexion = Asa(WinHttpConnect(
+            sesion.0,
+            &HSTRING::from(servidor),
+            INTERNET_DEFAULT_HTTPS_PORT,
+            0,
+        ));
         if conexion.0.is_null() {
             return None;
         }
@@ -187,9 +203,15 @@ mod tests {
 
     #[test]
     fn extrae_el_host_sin_ruta_usuario_ni_puerto() {
-        assert_eq!(host("https://github.com/UtilityForCoders/orbyt").as_deref(), Some("github.com"));
+        assert_eq!(
+            host("https://github.com/UtilityForCoders/orbyt").as_deref(),
+            Some("github.com")
+        );
         assert_eq!(host("http://Example.com:8080/a?b=c").as_deref(), Some("example.com"));
-        assert_eq!(host("https://user:pw@secreto.example.com/x").as_deref(), Some("secreto.example.com"));
+        assert_eq!(
+            host("https://user:pw@secreto.example.com/x").as_deref(),
+            Some("secreto.example.com")
+        );
         assert_eq!(host("HTTPS://WWW.Google.com").as_deref(), Some("www.google.com"));
     }
 

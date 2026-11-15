@@ -26,7 +26,10 @@ pub fn abrir(acceso: &Acceso) {
         );
         // Según la documentación, un valor <= 32 es un código de error.
         if resultado.0 as isize <= 32 {
-            eprintln!("no se pudo abrir {:?} (código {})", acceso.destino, resultado.0 as isize);
+            eprintln!(
+                "no se pudo abrir {:?} (código {})",
+                acceso.destino, resultado.0 as isize
+            );
         }
     }
 }

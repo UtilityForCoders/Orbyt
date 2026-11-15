@@ -32,8 +32,15 @@ pub fn empezar(hwnd: HWND) {
     EN_COLA.store(false, Ordering::SeqCst);
     ACTIVO.store(true, Ordering::SeqCst);
     // Un único hilo para toda la vida del programa: se duerme cuando la rueda se cierra.
-    HILO.get_or_init(|| thread::Builder::new().name("ritmo".into()).spawn(bucle).expect("hilo de fotogramas").thread().clone())
-        .unpark();
+    HILO.get_or_init(|| {
+        thread::Builder::new()
+            .name("ritmo".into())
+            .spawn(bucle)
+            .expect("hilo de fotogramas")
+            .thread()
+            .clone()
+    })
+    .unpark();
 }
 
 pub fn parar() {
@@ -65,8 +72,8 @@ pub fn atendido() {
 fn esperar_fotograma() {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::Threading::{
-        CreateWaitableTimerExW, SetWaitableTimer, WaitForSingleObject, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-        INFINITE, TIMER_ALL_ACCESS,
+        CreateWaitableTimerExW, SetWaitableTimer, WaitForSingleObject, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE,
+        TIMER_ALL_ACCESS,
     };
     thread_local! {
         static RELOJ: Option<HANDLE> = unsafe {

@@ -21,14 +21,14 @@ use crate::apps::{self, AppInstalada};
 use crate::autostart;
 use crate::config::{self, AbrirEn, Acceso, Boton, Config, Grupo, Modo};
 use crate::icons::{self, Icono, IconoRef};
-use crate::lucide;
-use std::collections::HashMap;
-use std::sync::Arc;
 use crate::launch;
+use crate::lucide;
 use crate::render::{self, Escena};
 use crate::ui::{dentro, glifo, rect, rgba, tema, Alin, Color, Peso, Pintor, Rect};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::Arc;
 use windows::core::{w, Interface, BOOL, PCWSTR, PWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct2D::Common::*;
@@ -174,7 +174,11 @@ impl Campo {
     }
 
     fn byte(&self, c: usize) -> usize {
-        self.texto.char_indices().nth(c).map(|(i, _)| i).unwrap_or(self.texto.len())
+        self.texto
+            .char_indices()
+            .nth(c)
+            .map(|(i, _)| i)
+            .unwrap_or(self.texto.len())
     }
 
     /// Posición del cursor en unidades UTF-16 (lo que mide DirectWrite).
@@ -201,7 +205,10 @@ impl Campo {
     fn insertar(&mut self, s: &str) {
         self.quitar_seleccion();
         // Una sola línea: los saltos de un texto pegado se vuelven espacios.
-        let limpio: String = s.chars().map(|c| if c == '\r' || c == '\n' || c == '\t' { ' ' } else { c }).collect();
+        let limpio: String = s
+            .chars()
+            .map(|c| if c == '\r' || c == '\n' || c == '\t' { ' ' } else { c })
+            .collect();
         let b = self.byte(self.cursor);
         self.texto.insert_str(b, &limpio);
         self.cursor += limpio.chars().count();
@@ -361,14 +368,23 @@ fn crear(principal: HWND) -> windows::core::Result<()> {
         let mut p = POINT::default();
         let _ = GetCursorPos(&mut p);
         let monitor = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
-        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
         let _ = GetMonitorInfoW(monitor, &mut info);
         let (mut dx, mut dy) = (96u32, 96u32);
         let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
         let s = dx as f32 / 96.0;
         let t = info.rcWork;
-        let (an, al) = (((1000.0 * s) as i32).min(t.right - t.left), ((680.0 * s) as i32).min(t.bottom - t.top));
-        let (x, y) = (t.left + (t.right - t.left - an) / 2, t.top + (t.bottom - t.top - al) / 2);
+        let (an, al) = (
+            ((1000.0 * s) as i32).min(t.right - t.left),
+            ((680.0 * s) as i32).min(t.bottom - t.top),
+        );
+        let (x, y) = (
+            t.left + (t.right - t.left - an) / 2,
+            t.top + (t.bottom - t.top - al) / 2,
+        );
 
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
@@ -390,7 +406,16 @@ fn crear(principal: HWND) -> windows::core::Result<()> {
         let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &oscuro as *const _ as *const _, 4);
         let fondo = DWMSBT_TRANSIENTWINDOW;
         let vidrio = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &fondo as *const _ as *const _, 4).is_ok()
-            && DwmExtendFrameIntoClientArea(hwnd, &MARGINS { cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1 }).is_ok();
+            && DwmExtendFrameIntoClientArea(
+                hwnd,
+                &MARGINS {
+                    cxLeftWidth: -1,
+                    cxRightWidth: -1,
+                    cyTopHeight: -1,
+                    cyBottomHeight: -1,
+                },
+            )
+            .is_ok();
 
         let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
         let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
@@ -483,7 +508,9 @@ impl Ajustes {
 
     fn filtrar(&mut self) {
         let q = self.campos[CampoId::Buscar as usize].texto.clone();
-        self.filtradas = (0..self.apps.len()).filter(|&i| apps::coincide(&self.apps[i], &q)).collect();
+        self.filtradas = (0..self.apps.len())
+            .filter(|&i| apps::coincide(&self.apps[i], &q))
+            .collect();
         self.scroll_apps = 0.0;
     }
 
@@ -511,7 +538,10 @@ impl Ajustes {
         self.grupo = grupo.filter(|&g| g < self.cfg.grupos.len());
         self.scroll_accesos = 0.0;
         self.foco = None;
-        let nombre = self.grupo.map(|g| self.cfg.grupos[g].nombre.clone()).unwrap_or_default();
+        let nombre = self
+            .grupo
+            .map(|g| self.cfg.grupos[g].nombre.clone())
+            .unwrap_or_default();
         self.campo(CampoId::NombreGrupo).poner(&nombre);
         self.elegir(None);
     }
@@ -519,7 +549,9 @@ impl Ajustes {
     /// Ícono que muestra marcado el selector: el del grupo o el del editor.
     fn icono_objetivo(&self) -> Option<String> {
         if self.selector_grupo {
-            self.grupo.and_then(|g| self.cfg.grupos.get(g)).and_then(|g| g.icono.clone())
+            self.grupo
+                .and_then(|g| self.cfg.grupos.get(g))
+                .and_then(|g| g.icono.clone())
         } else {
             self.icono_editor.clone()
         }
@@ -528,7 +560,11 @@ impl Ajustes {
     fn elegir(&mut self, i: Option<usize>) {
         self.seleccion = i.filter(|&i| i < self.lista().len());
         let (n, d, a) = match self.seleccion.map(|i| &self.lista()[i]) {
-            Some(x) => (x.nombre.clone(), x.destino.clone(), x.argumentos.clone().unwrap_or_default()),
+            Some(x) => (
+                x.nombre.clone(),
+                x.destino.clone(),
+                x.argumentos.clone().unwrap_or_default(),
+            ),
             None => Default::default(),
         };
         self.icono_editor = self.seleccion.and_then(|i| self.lista()[i].icono.clone());
@@ -557,7 +593,11 @@ impl Ajustes {
 
     fn cargar_archivo(&mut self) {
         let ruta = self.campos[CampoId::Archivo as usize].texto.trim().to_string();
-        self.archivo_cantidad = if ruta.is_empty() { 0 } else { icons::cantidad_en_archivo(&ruta).min(5000) };
+        self.archivo_cantidad = if ruta.is_empty() {
+            0
+        } else {
+            icons::cantidad_en_archivo(&ruta).min(5000)
+        };
         self.scroll_sel = 0.0;
     }
 
@@ -589,7 +629,11 @@ impl Ajustes {
     /// Sin grupos no hay dónde poner un acceso: se crea uno.
     fn asegurar_grupo(&mut self) {
         if self.grupo.is_none() {
-            self.cfg.grupos.push(Grupo { nombre: "Principal".into(), icono: None, accesos: Vec::new() });
+            self.cfg.grupos.push(Grupo {
+                nombre: "Principal".into(),
+                icono: None,
+                accesos: Vec::new(),
+            });
             self.ir_a(Some(self.cfg.grupos.len() - 1));
         }
     }
@@ -601,7 +645,12 @@ impl Ajustes {
             self.elegir(Some(ya));
             return;
         }
-        let nuevo = Acceso { nombre: app.nombre.clone(), destino: app.destino.clone(), argumentos: None, icono: None };
+        let nuevo = Acceso {
+            nombre: app.nombre.clone(),
+            destino: app.destino.clone(),
+            argumentos: None,
+            icono: None,
+        };
         self.lista_mut().push(nuevo);
         self.guardar();
         self.elegir(Some(self.lista().len() - 1));
@@ -617,10 +666,19 @@ impl Ajustes {
             unsafe {
                 let _ = MessageBeep(MB_ICONWARNING);
             }
-            self.foco = Some(if nombre.is_empty() { CampoId::Nombre } else { CampoId::Destino });
+            self.foco = Some(if nombre.is_empty() {
+                CampoId::Nombre
+            } else {
+                CampoId::Destino
+            });
             return;
         }
-        let acceso = Acceso { nombre, destino, argumentos: (!args.is_empty()).then_some(args), icono: self.icono_editor.clone() };
+        let acceso = Acceso {
+            nombre,
+            destino,
+            argumentos: (!args.is_empty()).then_some(args),
+            icono: self.icono_editor.clone(),
+        };
         if self.grupo.is_none() {
             // `ir_a` limpia el editor, pero el acceso ya está leído.
             self.asegurar_grupo();
@@ -638,7 +696,9 @@ impl Ajustes {
     }
 
     fn poner_deslizador(&mut self, d: Desliz, x: f32) {
-        let Some((_, pista)) = self.pistas.iter().find(|(id, _)| *id == d) else { return };
+        let Some((_, pista)) = self.pistas.iter().find(|(id, _)| *id == d) else {
+            return;
+        };
         let v = ((x - pista.left) / (pista.right - pista.left)).clamp(0.0, 1.0);
         match d {
             Desliz::Retardo => {
@@ -718,7 +778,11 @@ impl Ajustes {
             }
             Accion::Contexto(g) => self.ir_a(g),
             Accion::NuevoGrupo => {
-                self.cfg.grupos.push(Grupo { nombre: "Nuevo grupo".into(), icono: None, accesos: Vec::new() });
+                self.cfg.grupos.push(Grupo {
+                    nombre: "Nuevo grupo".into(),
+                    icono: None,
+                    accesos: Vec::new(),
+                });
                 self.guardar();
                 self.ir_a(Some(self.cfg.grupos.len() - 1));
                 // El nombre queda seleccionado: lo que se escriba lo reemplaza.
@@ -798,8 +862,16 @@ impl Ajustes {
                 let _ = PostMessageW(Some(self.principal), WM_CLOSE, WPARAM(0), LPARAM(0));
             },
             Accion::AbrirCarpeta => {
-                let dir = config::ruta().parent().map(|d| d.display().to_string()).unwrap_or_default();
-                return Some(Diferida::Abrir(Acceso { nombre: String::new(), destino: dir, argumentos: None, icono: None }));
+                let dir = config::ruta()
+                    .parent()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_default();
+                return Some(Diferida::Abrir(Acceso {
+                    nombre: String::new(),
+                    destino: dir,
+                    argumentos: None,
+                    icono: None,
+                }));
             }
             _ => {}
         }
@@ -816,7 +888,9 @@ impl Ajustes {
 
     /// Coloca el cursor del campo donde se hizo clic.
     fn cursor_en(&mut self, id: CampoId, x: f32) {
-        let Some(&(_, r, desplaz)) = self.campos_r.iter().find(|(c, _, _)| *c == id) else { return };
+        let Some(&(_, r, desplaz)) = self.campos_r.iter().find(|(c, _, _)| *c == id) else {
+            return;
+        };
         let Some(p) = self.pintor.as_mut() else { return };
         let campo = &self.campos[id as usize];
         let rel = x - (r.left + 12.0) + desplaz;
@@ -848,7 +922,10 @@ impl Ajustes {
         let dpi = self.escala * 96.0;
         let props = D2D1_RENDER_TARGET_PROPERTIES {
             r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED },
+            pixelFormat: D2D1_PIXEL_FORMAT {
+                format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+            },
             dpiX: dpi,
             dpiY: dpi,
             usage: D2D1_RENDER_TARGET_USAGE_NONE,
@@ -856,7 +933,10 @@ impl Ajustes {
         };
         let hprops = D2D1_HWND_RENDER_TARGET_PROPERTIES {
             hwnd: self.hwnd,
-            pixelSize: D2D_SIZE_U { width: cr.right.max(1) as u32, height: cr.bottom.max(1) as u32 },
+            pixelSize: D2D_SIZE_U {
+                width: cr.right.max(1) as u32,
+                height: cr.bottom.max(1) as u32,
+            },
             presentOptions: D2D1_PRESENT_OPTIONS_NONE,
         };
         let rt = unsafe { self.factory.CreateHwndRenderTarget(&props, &hprops).ok()? };
@@ -914,7 +994,14 @@ impl Ajustes {
     }
 
     fn lateral(&mut self, p: &mut Pintor, h: f32) {
-        p.texto("Ajustes", rect(22.0, 20.0, 170.0, 30.0), 20.0, Peso::Semi, Alin::Izq, tema::TEXTO);
+        p.texto(
+            "Ajustes",
+            rect(22.0, 20.0, 170.0, 30.0),
+            20.0,
+            Peso::Semi,
+            Alin::Izq,
+            tema::TEXTO,
+        );
         let mut y = 70.0;
         for (s, g, nombre) in SECCIONES {
             let r = rect(10.0, y, ANCHO_LATERAL - 20.0, 36.0);
@@ -928,12 +1015,26 @@ impl Ajustes {
             }
             let c = if activa { tema::TEXTO } else { tema::TEXTO_2 };
             p.glifo(g, r.left + 22.0, r.top + 18.0, 14.0, c);
-            p.texto(nombre, rect(r.left + 42.0, r.top, 140.0, 36.0), 13.0, if activa { Peso::Semi } else { Peso::Normal }, Alin::Izq, c);
+            p.texto(
+                nombre,
+                rect(r.left + 42.0, r.top, 140.0, 36.0),
+                13.0,
+                if activa { Peso::Semi } else { Peso::Normal },
+                Alin::Izq,
+                c,
+            );
             self.zona(r, Accion::Seccion(s));
             y += 40.0;
         }
         let version = format!("Orbyt {}", env!("CARGO_PKG_VERSION"));
-        p.texto(&version, rect(22.0, h - 40.0, 170.0, 24.0), 11.5, Peso::Normal, Alin::Izq, tema::TEXTO_3);
+        p.texto(
+            &version,
+            rect(22.0, h - 40.0, 170.0, 24.0),
+            11.5,
+            Peso::Normal,
+            Alin::Izq,
+            tema::TEXTO_3,
+        );
     }
 
     fn titulo(&self, p: &mut Pintor, x: f32, cw: f32, texto: &str, sub: &str) -> f32 {
@@ -941,7 +1042,14 @@ impl Ajustes {
         if sub.is_empty() {
             return 76.0;
         }
-        p.texto(sub, rect(x, 56.0, cw, 22.0), 12.5, Peso::Normal, Alin::Izq, tema::TEXTO_2);
+        p.texto(
+            sub,
+            rect(x, 56.0, cw, 22.0),
+            12.5,
+            Peso::Normal,
+            Alin::Izq,
+            tema::TEXTO_2,
+        );
         92.0
     }
 
@@ -955,8 +1063,22 @@ impl Ajustes {
         let alto = 66.0;
         p.rellenar(rect(x, y, cw, alto - 6.0), 10.0, tema::CONTROL);
         let ancho_txt = (cw - 360.0).max(220.0);
-        p.texto(titulo, rect(x + 16.0, y + 9.0, ancho_txt, 22.0), 13.5, Peso::Semi, Alin::Izq, tema::TEXTO);
-        p.texto(desc, rect(x + 16.0, y + 30.0, ancho_txt, 20.0), 12.0, Peso::Normal, Alin::Izq, tema::TEXTO_2);
+        p.texto(
+            titulo,
+            rect(x + 16.0, y + 9.0, ancho_txt, 22.0),
+            13.5,
+            Peso::Semi,
+            Alin::Izq,
+            tema::TEXTO,
+        );
+        p.texto(
+            desc,
+            rect(x + 16.0, y + 30.0, ancho_txt, 20.0),
+            12.0,
+            Peso::Normal,
+            Alin::Izq,
+            tema::TEXTO_2,
+        );
         (y + (alto - 6.0) / 2.0, y + alto)
     }
 
@@ -967,7 +1089,15 @@ impl Ajustes {
             p.rellenar(r, 11.0, if sobre { rgba(255, 255, 255, 1.0) } else { tema::CLARO });
             p.circulo(r.right - 11.0, cy, 7.0, tema::TEXTO_OSCURO);
         } else {
-            p.rellenar(r, 11.0, if sobre { tema::CONTROL_ACTIVO } else { tema::CONTROL_HOVER });
+            p.rellenar(
+                r,
+                11.0,
+                if sobre {
+                    tema::CONTROL_ACTIVO
+                } else {
+                    tema::CONTROL_HOVER
+                },
+            );
             p.bordear(r, 11.0, tema::BORDE_FUERTE, 1.0);
             p.circulo(r.left + 11.0, cy, 6.0, tema::TEXTO_2);
         }
@@ -975,7 +1105,10 @@ impl Ajustes {
     }
 
     fn segmentado(&mut self, p: &mut Pintor, derecha: f32, cy: f32, opciones: &[(&str, Accion, bool)]) {
-        let anchos: Vec<f32> = opciones.iter().map(|(t, _, _)| p.medir(t, 12.5, Peso::Medio) + 28.0).collect();
+        let anchos: Vec<f32> = opciones
+            .iter()
+            .map(|(t, _, _)| p.medir(t, 12.5, Peso::Medio) + 28.0)
+            .collect();
         let total: f32 = anchos.iter().sum::<f32>() + 6.0;
         let caja = rect(derecha - total, cy - 16.0, total, 32.0);
         p.rellenar(caja, 9.0, rgba(0, 0, 0, 0.22));
@@ -989,7 +1122,13 @@ impl Ajustes {
             } else if sobre {
                 p.rellenar(r, 7.0, tema::CONTROL_HOVER);
             }
-            let c = if *sel { tema::TEXTO_OSCURO } else if sobre { tema::TEXTO } else { tema::TEXTO_2 };
+            let c = if *sel {
+                tema::TEXTO_OSCURO
+            } else if sobre {
+                tema::TEXTO
+            } else {
+                tema::TEXTO_2
+            };
             p.texto(texto, r, 12.5, Peso::Medio, Alin::Centro, c);
             self.zona(r, *accion);
             x += ancho;
@@ -1007,7 +1146,14 @@ impl Ajustes {
         let kx = x + ancho * v;
         p.circulo(kx, cy + 1.0, 9.0, rgba(0, 0, 0, 0.25));
         p.circulo(kx, cy, if activo { 9.0 } else { 8.0 }, tema::CLARO);
-        p.texto(valor, rect(derecha - 62.0, cy - 12.0, 62.0, 24.0), 13.0, Peso::Semi, Alin::Der, tema::TEXTO);
+        p.texto(
+            valor,
+            rect(derecha - 62.0, cy - 12.0, 62.0, 24.0),
+            13.0,
+            Peso::Semi,
+            Alin::Der,
+            tema::TEXTO,
+        );
         self.pistas.push((id, pista));
         self.zona(rect(x - 10.0, cy - 14.0, ancho + 20.0, 28.0), Accion::Deslizador(id));
     }
@@ -1030,7 +1176,14 @@ impl Ajustes {
                 let ancho = p.medir(texto, 12.5, Peso::Semi) + 22.0;
                 let x0 = (r.left + r.right - ancho) / 2.0;
                 p.glifo(g, x0 + 7.0, (r.top + r.bottom) / 2.0, 12.0, color);
-                p.texto(texto, rect(x0 + 22.0, r.top, ancho, r.bottom - r.top), 12.5, Peso::Semi, Alin::Izq, color);
+                p.texto(
+                    texto,
+                    rect(x0 + 22.0, r.top, ancho, r.bottom - r.top),
+                    12.5,
+                    Peso::Semi,
+                    Alin::Izq,
+                    color,
+                );
             }
             None => p.texto(texto, r, 12.5, Peso::Semi, Alin::Centro, color),
         }
@@ -1043,7 +1196,13 @@ impl Ajustes {
         if sobre {
             p.rellenar(r, 7.0, tema::CONTROL_ACTIVO);
         }
-        let c = if sobre && peligro { tema::PELIGRO } else if sobre { tema::TEXTO } else { tema::TEXTO_2 };
+        let c = if sobre && peligro {
+            tema::PELIGRO
+        } else if sobre {
+            tema::TEXTO
+        } else {
+            tema::TEXTO_2
+        };
         p.glifo(g, cx, cy, 12.0, c);
         self.zona(r, accion);
     }
@@ -1052,7 +1211,18 @@ impl Ajustes {
         let foco = self.foco == Some(id);
         let sobre = self.hover == Some(Accion::Campo(id));
         p.rellenar(r, 8.0, if foco { rgba(0, 0, 0, 0.30) } else { rgba(0, 0, 0, 0.20) });
-        p.bordear(r, 8.0, if foco { rgba(255, 255, 255, 0.45) } else if sobre { tema::BORDE_FUERTE } else { tema::BORDE }, 1.0);
+        p.bordear(
+            r,
+            8.0,
+            if foco {
+                rgba(255, 255, 255, 0.45)
+            } else if sobre {
+                tema::BORDE_FUERTE
+            } else {
+                tema::BORDE
+            },
+            1.0,
+        );
         let mut x0 = r.left + 12.0;
         if let Some(g) = g {
             p.glifo(g, r.left + 18.0, (r.top + r.bottom) / 2.0, 12.0, tema::TEXTO_3);
@@ -1070,7 +1240,11 @@ impl Ajustes {
         } else {
             if foco && campo.todo {
                 let ancho = p.medir(&campo.texto, 13.0, Peso::Normal);
-                p.rellenar(rect(interior.left - desplaz, r.top + 7.0, ancho, r.bottom - r.top - 14.0), 3.0, rgba(120, 150, 255, 0.45));
+                p.rellenar(
+                    rect(interior.left - desplaz, r.top + 7.0, ancho, r.bottom - r.top - 14.0),
+                    3.0,
+                    rgba(120, 150, 255, 0.45),
+                );
             }
             let t = rect(interior.left - desplaz, r.top, 10_000.0, r.bottom - r.top);
             p.texto(&campo.texto, t, 13.0, Peso::Normal, Alin::Izq, tema::TEXTO);
@@ -1091,18 +1265,45 @@ impl Ajustes {
         y = self.cabecera(p, x, y, cw, "Rueda");
         let (cy, sig) = self.fila(p, x, y, cw, "Posición", "Dónde aparece la rueda al mantener el botón.");
         let a = self.cfg.abrir_en;
-        self.segmentado(p, x + cw - 16.0, cy, &[
-            ("Bajo el puntero", Accion::AbrirEn(AbrirEn::Cursor), a == AbrirEn::Cursor),
-            ("Centro de la pantalla", Accion::AbrirEn(AbrirEn::Centro), a == AbrirEn::Centro),
-        ]);
+        self.segmentado(
+            p,
+            x + cw - 16.0,
+            cy,
+            &[
+                (
+                    "Bajo el puntero",
+                    Accion::AbrirEn(AbrirEn::Cursor),
+                    a == AbrirEn::Cursor,
+                ),
+                (
+                    "Centro de la pantalla",
+                    Accion::AbrirEn(AbrirEn::Centro),
+                    a == AbrirEn::Centro,
+                ),
+            ],
+        );
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Retardo", "Cuánto mantenerlo antes de que salga. Un clic corto funciona igual.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Retardo",
+            "Cuánto mantenerlo antes de que salga. Un clic corto funciona igual.",
+        );
         let v = (self.cfg.retardo_ms - config::RETARDO_MIN) as f32 / (config::RETARDO_MAX - config::RETARDO_MIN) as f32;
         let texto = format!("{} ms", self.cfg.retardo_ms);
         self.deslizador(p, x + cw - 16.0, cy, Desliz::Retardo, v, &texto);
         y = sig + 14.0;
         y = self.cabecera(p, x, y, cw, "Sistema");
-        let (cy, _) = self.fila(p, x, y, cw, "Iniciar con Windows", "Orbyt se abre solo al iniciar sesión y queda en la bandeja.");
+        let (cy, _) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Iniciar con Windows",
+            "Orbyt se abre solo al iniciar sesión y queda en la bandeja.",
+        );
         let activo = self.inicio_windows;
         self.interruptor(p, x + cw - 16.0, cy, activo, Accion::InicioWindows);
     }
@@ -1110,13 +1311,25 @@ impl Ajustes {
     fn activacion(&mut self, p: &mut Pintor, x: f32, cw: f32) {
         let mut y = self.titulo(p, x, cw, "Activación", "");
         y = self.cabecera(p, x, y, cw, "Ratón");
-        let (cy, sig) = self.fila(p, x, y, cw, "Botón", "Qué botón abre la rueda. Los laterales suelen estar libres.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Botón",
+            "Qué botón abre la rueda. Los laterales suelen estar libres.",
+        );
         let b = self.cfg.boton;
-        self.segmentado(p, x + cw - 16.0, cy, &[
-            ("Central", Accion::Boton(Boton::Central), b == Boton::Central),
-            ("Atrás", Accion::Boton(Boton::Atras), b == Boton::Atras),
-            ("Adelante", Accion::Boton(Boton::Adelante), b == Boton::Adelante),
-        ]);
+        self.segmentado(
+            p,
+            x + cw - 16.0,
+            cy,
+            &[
+                ("Central", Accion::Boton(Boton::Central), b == Boton::Central),
+                ("Atrás", Accion::Boton(Boton::Atras), b == Boton::Atras),
+                ("Adelante", Accion::Boton(Boton::Adelante), b == Boton::Adelante),
+            ],
+        );
         y = sig;
         let m = self.cfg.modo;
         let desc = match m {
@@ -1124,19 +1337,45 @@ impl Ajustes {
             Modo::Clic => "El botón abre la rueda; eliges con clic izquierdo.",
         };
         let (cy, sig) = self.fila(p, x, y, cw, "Elegir con", desc);
-        self.segmentado(p, x + cw - 16.0, cy, &[
-            ("Soltar el botón", Accion::Modo(Modo::Soltar), m == Modo::Soltar),
-            ("Clic", Accion::Modo(Modo::Clic), m == Modo::Clic),
-        ]);
+        self.segmentado(
+            p,
+            x + cw - 16.0,
+            cy,
+            &[
+                ("Soltar el botón", Accion::Modo(Modo::Soltar), m == Modo::Soltar),
+                ("Clic", Accion::Modo(Modo::Clic), m == Modo::Clic),
+            ],
+        );
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Zona central", "Círculo del centro: cancela o vuelve atrás.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Zona central",
+            "Círculo del centro: cancela o vuelve atrás.",
+        );
         let v = (self.cfg.zona_central - config::ZONA_MIN) / (config::ZONA_MAX - config::ZONA_MIN);
         let texto = format!("{} px", self.cfg.zona_central as i32);
         self.deslizador(p, x + cw - 16.0, cy, Desliz::Zona, v, &texto);
         y = sig + 14.0;
         y = self.cabecera(p, x, y, cw, "Teclado");
-        let (cy, _) = self.fila(p, x, y, cw, "Escape", "Con la rueda abierta, Escape la cierra sin abrir nada.");
-        p.texto("Siempre activo", rect(x + cw - 216.0, cy - 12.0, 200.0, 24.0), 12.5, Peso::Normal, Alin::Der, tema::TEXTO_3);
+        let (cy, _) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Escape",
+            "Con la rueda abierta, Escape la cierra sin abrir nada.",
+        );
+        p.texto(
+            "Siempre activo",
+            rect(x + cw - 216.0, cy - 12.0, 200.0, 24.0),
+            12.5,
+            Peso::Normal,
+            Alin::Der,
+            tema::TEXTO_3,
+        );
     }
 
     fn apariencia(&mut self, p: &mut Pintor, x: f32, cw: f32, h: f32) {
@@ -1147,19 +1386,47 @@ impl Ajustes {
         let texto = format!("{} %", (self.cfg.tamano * 100.0).round() as i32);
         self.deslizador(p, x + cw - 16.0, cy, Desliz::Tamano, v, &texto);
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Oscurecer el fondo", "Atenúa un poco la pantalla mientras la rueda está abierta.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Oscurecer el fondo",
+            "Atenúa un poco la pantalla mientras la rueda está abierta.",
+        );
         let o = self.cfg.oscurecer;
         self.interruptor(p, x + cw - 16.0, cy, o, Accion::Oscurecer);
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Mostrar nombre seleccionado", "Muestra junto a la rueda el nombre del acceso al que apuntas.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Mostrar nombre seleccionado",
+            "Muestra junto a la rueda el nombre del acceso al que apuntas.",
+        );
         let mn = self.cfg.mostrar_nombres;
         self.interruptor(p, x + cw - 16.0, cy, mn, Accion::MostrarNombres);
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Pausar en pantalla completa", "Con un juego o un vídeo a pantalla completa, el botón funciona como siempre.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Pausar en pantalla completa",
+            "Con un juego o un vídeo a pantalla completa, el botón funciona como siempre.",
+        );
         let pc = self.cfg.pausar_pantalla_completa;
         self.interruptor(p, x + cw - 16.0, cy, pc, Accion::PausarPantallaCompleta);
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Opacidad de los botones", "Nivel de transparencia de los botones orbitales.");
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Opacidad de los botones",
+            "Nivel de transparencia de los botones orbitales.",
+        );
         let v_op = (self.cfg.opacidad_fondo - config::OPACIDAD_MIN) / (config::OPACIDAD_MAX - config::OPACIDAD_MIN);
         let texto_op = format!("{} %", (self.cfg.opacidad_fondo * 100.0).round() as i32);
         self.deslizador(p, x + cw - 16.0, cy, Desliz::OpacidadFondo, v_op, &texto_op);
@@ -1194,28 +1461,66 @@ impl Ajustes {
     }
 
     fn accesos(&mut self, p: &mut Pintor, x: f32, cw: f32, h: f32) {
-        let y = self.titulo(p, x, cw, "Accesos", "La rueda muestra tus grupos; cada grupo, sus apps. El orden sigue las agujas del reloj, desde arriba.");
+        let y = self.titulo(
+            p,
+            x,
+            cw,
+            "Accesos",
+            "La rueda muestra tus grupos; cada grupo, sus apps. El orden sigue las agujas del reloj, desde arriba.",
+        );
         let sep = 24.0;
         let col = (cw - sep) / 2.0;
         let (xi, xd) = (x, x + col + sep);
 
         // ── Izquierda: apps instaladas ──
-        p.texto("Aplicaciones instaladas", rect(xi, y, col - 40.0, 24.0), 13.5, Peso::Semi, Alin::Izq, tema::TEXTO);
+        p.texto(
+            "Aplicaciones instaladas",
+            rect(xi, y, col - 40.0, 24.0),
+            13.5,
+            Peso::Semi,
+            Alin::Izq,
+            tema::TEXTO,
+        );
         self.icono_boton(p, xi + col - 14.0, y + 12.0, glifo::RECARGAR, Accion::Recargar, false);
-        self.campo_texto(p, rect(xi, y + 34.0, col, 36.0), CampoId::Buscar, "Buscar aplicación…", Some(glifo::BUSCAR));
+        self.campo_texto(
+            p,
+            rect(xi, y + 34.0, col, 36.0),
+            CampoId::Buscar,
+            "Buscar aplicación…",
+            Some(glifo::BUSCAR),
+        );
         let area = rect(xi, y + 80.0, col, h - y - 80.0 - 24.0);
         self.area_apps = area;
         p.rellenar(area, 10.0, rgba(0, 0, 0, 0.18));
         p.bordear(area, 10.0, tema::BORDE, 1.0);
-        let interior = rect(area.left + 4.0, area.top + 4.0, area.right - area.left - 8.0, area.bottom - area.top - 8.0);
+        let interior = rect(
+            area.left + 4.0,
+            area.top + 4.0,
+            area.right - area.left - 8.0,
+            area.bottom - area.top - 8.0,
+        );
         let alto_vis = interior.bottom - interior.top;
         self.max_apps = (self.filtradas.len() as f32 * FILA_APP - alto_vis).max(0.0);
         self.scroll_apps = self.scroll_apps.clamp(0.0, self.max_apps);
         p.recortar(interior);
         if self.cargando {
-            p.texto("Cargando aplicaciones…", interior, 13.0, Peso::Normal, Alin::Centro, tema::TEXTO_2);
+            p.texto(
+                "Cargando aplicaciones…",
+                interior,
+                13.0,
+                Peso::Normal,
+                Alin::Centro,
+                tema::TEXTO_2,
+            );
         } else if self.filtradas.is_empty() {
-            p.texto("Ninguna aplicación coincide", interior, 13.0, Peso::Normal, Alin::Centro, tema::TEXTO_2);
+            p.texto(
+                "Ninguna aplicación coincide",
+                interior,
+                13.0,
+                Peso::Normal,
+                Alin::Centro,
+                tema::TEXTO_2,
+            );
         }
         let primera = (self.scroll_apps / FILA_APP) as usize;
         let ultima = ((self.scroll_apps + alto_vis) / FILA_APP).ceil() as usize + 1;
@@ -1233,14 +1538,26 @@ impl Ajustes {
                 p.imagen(&ic, rect(r.left + 10.0, ry + 8.0, 24.0, 24.0), 1.0);
             }
             let nombre = self.apps[i].nombre.clone();
-            p.texto(&nombre, rect(r.left + 44.0, ry, r.right - r.left - 84.0, FILA_APP), 13.0, Peso::Normal, Alin::Izq, tema::TEXTO);
+            p.texto(
+                &nombre,
+                rect(r.left + 44.0, ry, r.right - r.left - 84.0, FILA_APP),
+                13.0,
+                Peso::Normal,
+                Alin::Izq,
+                tema::TEXTO,
+            );
             if ya {
                 p.glifo(glifo::CHECK, r.right - 20.0, ry + FILA_APP / 2.0, 12.0, tema::TEXTO_3);
             } else if sobre {
                 p.glifo(glifo::MAS, r.right - 20.0, ry + FILA_APP / 2.0, 12.0, tema::TEXTO);
             }
             // La zona se recorta al área visible de la lista.
-            let rz = rect(r.left, ry.max(interior.top), r.right - r.left, (ry + FILA_APP).min(interior.bottom) - ry.max(interior.top));
+            let rz = rect(
+                r.left,
+                ry.max(interior.top),
+                r.right - r.left,
+                (ry + FILA_APP).min(interior.bottom) - ry.max(interior.top),
+            );
             self.zona(rz, accion);
         }
         p.fin_recorte();
@@ -1254,7 +1571,14 @@ impl Ajustes {
             (Some(_), n) if n > RECOMENDADO => format!("En el grupo · {n} (se recomiendan hasta {RECOMENDADO})"),
             (Some(_), n) => format!("En el grupo · {n}"),
         };
-        p.texto(&cuenta, rect(xd, y, col, 24.0), 13.5, Peso::Semi, Alin::Izq, tema::TEXTO);
+        p.texto(
+            &cuenta,
+            rect(xd, y, col, 24.0),
+            13.5,
+            Peso::Semi,
+            Alin::Izq,
+            tema::TEXTO,
+        );
         let mut yd = self.pestanas_grupos(p, xd, y + 32.0, col);
         if self.grupo.is_some() {
             yd = self.barra_grupo(p, xd, yd, col);
@@ -1264,13 +1588,22 @@ impl Ajustes {
         self.area_accesos = area;
         p.rellenar(area, 10.0, rgba(0, 0, 0, 0.18));
         p.bordear(area, 10.0, tema::BORDE, 1.0);
-        let interior = rect(area.left + 4.0, area.top + 4.0, area.right - area.left - 8.0, area.bottom - area.top - 8.0);
+        let interior = rect(
+            area.left + 4.0,
+            area.top + 4.0,
+            area.right - area.left - 8.0,
+            area.bottom - area.top - 8.0,
+        );
         let alto_vis = interior.bottom - interior.top;
         self.max_accesos = (n as f32 * FILA_ACCESO - alto_vis).max(0.0);
         self.scroll_accesos = self.scroll_accesos.clamp(0.0, self.max_accesos);
         p.recortar(interior);
         if n == 0 {
-            let aviso = if self.grupo.is_some() { "Grupo vacío: agrega apps desde la izquierda" } else { "Crea un grupo, o agrega una app y se crea uno" };
+            let aviso = if self.grupo.is_some() {
+                "Grupo vacío: agrega apps desde la izquierda"
+            } else {
+                "Crea un grupo, o agrega una app y se crea uno"
+            };
             p.texto(aviso, interior, 13.0, Peso::Normal, Alin::Centro, tema::TEXTO_2);
         }
         for i in 0..n {
@@ -1286,21 +1619,45 @@ impl Ajustes {
             } else if sobre {
                 p.rellenar(r, 7.0, tema::CONTROL_HOVER);
             }
-            let rz = rect(r.left, ry.max(interior.top), r.right - r.left, (ry + FILA_ACCESO).min(interior.bottom) - ry.max(interior.top));
+            let rz = rect(
+                r.left,
+                ry.max(interior.top),
+                r.right - r.left,
+                (ry + FILA_ACCESO).min(interior.bottom) - ry.max(interior.top),
+            );
             self.zona(rz, Accion::Elegir(i));
             let acceso = self.lista()[i].clone();
-            p.texto(&format!("{}", i + 1), rect(r.left + 6.0, ry, 18.0, FILA_ACCESO), 11.5, Peso::Normal, Alin::Centro, tema::TEXTO_3);
+            p.texto(
+                &format!("{}", i + 1),
+                rect(r.left + 6.0, ry, 18.0, FILA_ACCESO),
+                11.5,
+                Peso::Normal,
+                Alin::Centro,
+                tema::TEXTO_3,
+            );
             match icons::visual(&acceso) {
                 Some(v) => p.visual(&v, rect(r.left + 30.0, ry + 9.0, 26.0, 26.0), tema::TEXTO),
                 None => {
                     let ri = rect(r.left + 30.0, ry + 9.0, 26.0, 26.0);
                     p.rellenar(ri, 7.0, tema::CONTROL_ACTIVO);
-                    let ini: String = acceso.nombre.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
+                    let ini: String = acceso
+                        .nombre
+                        .chars()
+                        .next()
+                        .map(|c| c.to_uppercase().collect())
+                        .unwrap_or_default();
                     p.texto(&ini, ri, 12.0, Peso::Semi, Alin::Centro, tema::TEXTO);
                 }
             }
             let ancho_txt = r.right - r.left - 66.0 - if sobre || elegida { 100.0 } else { 0.0 };
-            p.texto(&acceso.nombre, rect(r.left + 66.0, ry, ancho_txt, FILA_ACCESO), 13.0, Peso::Medio, Alin::Izq, tema::TEXTO);
+            p.texto(
+                &acceso.nombre,
+                rect(r.left + 66.0, ry, ancho_txt, FILA_ACCESO),
+                13.0,
+                Peso::Medio,
+                Alin::Izq,
+                tema::TEXTO,
+            );
             if sobre || elegida {
                 let cy = ry + FILA_ACCESO / 2.0;
                 self.icono_boton(p, r.right - 86.0, cy, glifo::ARRIBA, Accion::Subir(i), false);
@@ -1315,27 +1672,63 @@ impl Ajustes {
         let ed = rect(xd, area.bottom + 14.0, col, alto_editor);
         p.rellenar(ed, 10.0, tema::CONTROL);
         p.bordear(ed, 10.0, tema::BORDE, 1.0);
-        let titulo = if self.seleccion.is_some() { "Editar acceso" } else { "Nuevo acceso personalizado" };
-        p.texto(titulo, rect(ed.left + 16.0, ed.top + 10.0, col - 32.0, 24.0), 13.0, Peso::Semi, Alin::Izq, tema::TEXTO);
+        let titulo = if self.seleccion.is_some() {
+            "Editar acceso"
+        } else {
+            "Nuevo acceso personalizado"
+        };
+        p.texto(
+            titulo,
+            rect(ed.left + 16.0, ed.top + 10.0, col - 32.0, 24.0),
+            13.0,
+            Peso::Semi,
+            Alin::Izq,
+            tema::TEXTO,
+        );
         let et = 86.0;
         let xc = ed.left + 16.0 + et;
         let wc = col - 32.0 - et;
         let mut fy = ed.top + 42.0;
         for (id, etiqueta, marcador) in [
             (CampoId::Nombre, "Nombre", "Cómo se ve en la rueda"),
-            (CampoId::Destino, "Destino", "Programa, carpeta, archivo, URL o ms-settings:"),
+            (
+                CampoId::Destino,
+                "Destino",
+                "Programa, carpeta, archivo, URL o ms-settings:",
+            ),
             (CampoId::Args, "Argumentos", "Opcional"),
         ] {
-            p.texto(etiqueta, rect(ed.left + 16.0, fy, et, 34.0), 12.5, Peso::Normal, Alin::Izq, tema::TEXTO_2);
+            p.texto(
+                etiqueta,
+                rect(ed.left + 16.0, fy, et, 34.0),
+                12.5,
+                Peso::Normal,
+                Alin::Izq,
+                tema::TEXTO_2,
+            );
             let ancho = if id == CampoId::Destino { wc - 42.0 } else { wc };
             self.campo_texto(p, rect(xc, fy, ancho, 34.0), id, marcador, None);
             if id == CampoId::Destino {
-                self.boton(p, rect(xc + wc - 34.0, fy, 34.0, 34.0), "", Some(glifo::CARPETA), false, Accion::Examinar);
+                self.boton(
+                    p,
+                    rect(xc + wc - 34.0, fy, 34.0, 34.0),
+                    "",
+                    Some(glifo::CARPETA),
+                    false,
+                    Accion::Examinar,
+                );
             }
             fy += 42.0;
         }
         // Ícono: vista previa, elegir uno propio o volver al automático.
-        p.texto("Ícono", rect(ed.left + 16.0, fy, et, 34.0), 12.5, Peso::Normal, Alin::Izq, tema::TEXTO_2);
+        p.texto(
+            "Ícono",
+            rect(ed.left + 16.0, fy, et, 34.0),
+            12.5,
+            Peso::Normal,
+            Alin::Izq,
+            tema::TEXTO_2,
+        );
         let caja = rect(xc, fy, 34.0, 34.0);
         p.rellenar(caja, 8.0, rgba(0, 0, 0, 0.25));
         p.bordear(caja, 8.0, tema::BORDE, 1.0);
@@ -1347,15 +1740,43 @@ impl Ajustes {
         if let Some(v) = vista {
             p.visual(&v, rect(xc + 6.0, fy + 6.0, 22.0, 22.0), tema::TEXTO);
         }
-        self.boton(p, rect(xc + 44.0, fy, 110.0, 34.0), "Elegir…", None, false, Accion::AbrirSelector);
+        self.boton(
+            p,
+            rect(xc + 44.0, fy, 110.0, 34.0),
+            "Elegir…",
+            None,
+            false,
+            Accion::AbrirSelector,
+        );
         // Con un ícono propio, un botón para volver al automático.
         if self.icono_editor.is_some() {
-            self.boton(p, rect(xc + 162.0, fy, (wc - 162.0).min(116.0), 34.0), "Automático", None, false, Accion::IconoAuto);
+            self.boton(
+                p,
+                rect(xc + 162.0, fy, (wc - 162.0).min(116.0), 34.0),
+                "Automático",
+                None,
+                false,
+                Accion::IconoAuto,
+            );
         }
         fy += 42.0;
         let wb = (wc - 10.0) / 2.0;
-        self.boton(p, rect(xc, fy + 4.0, wb, 34.0), "Guardar", Some(glifo::CHECK), true, Accion::Guardar);
-        self.boton(p, rect(xc + wb + 10.0, fy + 4.0, wb, 34.0), "Nuevo", Some(glifo::MAS), false, Accion::Nuevo);
+        self.boton(
+            p,
+            rect(xc, fy + 4.0, wb, 34.0),
+            "Guardar",
+            Some(glifo::CHECK),
+            true,
+            Accion::Guardar,
+        );
+        self.boton(
+            p,
+            rect(xc + wb + 10.0, fy + 4.0, wb, 34.0),
+            "Nuevo",
+            Some(glifo::MAS),
+            false,
+            Accion::Nuevo,
+        );
     }
 
     /// Pastillas para elegir qué grupo se edita, y "+ Grupo".
@@ -1364,7 +1785,11 @@ impl Ajustes {
         let alto = 28.0;
         let mut items: Vec<(String, Accion, bool)> = Vec::new();
         for (i, g) in self.cfg.grupos.iter().enumerate() {
-            let nombre = if g.nombre.trim().is_empty() { "Sin nombre".to_string() } else { g.nombre.clone() };
+            let nombre = if g.nombre.trim().is_empty() {
+                "Sin nombre".to_string()
+            } else {
+                g.nombre.clone()
+            };
             items.push((nombre, Accion::Contexto(Some(i)), self.grupo == Some(i)));
         }
         let (mut cx, mut cy) = (x, y);
@@ -1379,11 +1804,32 @@ impl Ajustes {
             if sel {
                 p.rellenar(r, alto / 2.0, tema::CLARO);
             } else {
-                p.rellenar(r, alto / 2.0, if sobre { tema::CONTROL_ACTIVO } else { tema::CONTROL_HOVER });
+                p.rellenar(
+                    r,
+                    alto / 2.0,
+                    if sobre {
+                        tema::CONTROL_ACTIVO
+                    } else {
+                        tema::CONTROL_HOVER
+                    },
+                );
                 p.bordear(r, alto / 2.0, tema::BORDE, 1.0);
             }
-            let c = if sel { tema::TEXTO_OSCURO } else if sobre { tema::TEXTO } else { tema::TEXTO_2 };
-            p.texto(&texto, rect(r.left + 13.0, r.top, w - 26.0, alto), 12.5, Peso::Medio, Alin::Centro, c);
+            let c = if sel {
+                tema::TEXTO_OSCURO
+            } else if sobre {
+                tema::TEXTO
+            } else {
+                tema::TEXTO_2
+            };
+            p.texto(
+                &texto,
+                rect(r.left + 13.0, r.top, w - 26.0, alto),
+                12.5,
+                Peso::Medio,
+                Alin::Centro,
+                c,
+            );
             self.zona(r, accion);
             cx += w + 6.0;
         }
@@ -1395,23 +1841,48 @@ impl Ajustes {
         }
         let r = rect(cx, cy, w, alto);
         let sobre = self.hover == Some(Accion::NuevoGrupo);
-        p.rellenar(r, alto / 2.0, if sobre { tema::CONTROL_ACTIVO } else { rgba(0, 0, 0, 0.0) });
+        p.rellenar(
+            r,
+            alto / 2.0,
+            if sobre {
+                tema::CONTROL_ACTIVO
+            } else {
+                rgba(0, 0, 0, 0.0)
+            },
+        );
         p.bordear(r, alto / 2.0, if sobre { tema::BORDE_FUERTE } else { tema::BORDE }, 1.0);
         let c = if sobre { tema::TEXTO } else { tema::TEXTO_2 };
         p.glifo(glifo::MAS, r.left + 18.0, cy + alto / 2.0, 10.0, c);
-        p.texto("Grupo", rect(r.left + 30.0, cy, w - 38.0, alto), 12.5, Peso::Medio, Alin::Izq, c);
+        p.texto(
+            "Grupo",
+            rect(r.left + 30.0, cy, w - 38.0, alto),
+            12.5,
+            Peso::Medio,
+            Alin::Izq,
+            c,
+        );
         self.zona(r, Accion::NuevoGrupo);
         cy + alto + 12.0
     }
 
     /// Ícono, nombre, orden y borrar del grupo que se está editando.
     fn barra_grupo(&mut self, p: &mut Pintor, x: f32, y: f32, ancho: f32) -> f32 {
-        let Some(g) = self.grupo.filter(|&g| g < self.cfg.grupos.len()) else { return y };
+        let Some(g) = self.grupo.filter(|&g| g < self.cfg.grupos.len()) else {
+            return y;
+        };
         let alto = 34.0;
         // Ícono: clic para elegir otro.
         let caja = rect(x, y, alto, alto);
         let sobre = self.hover == Some(Accion::IconoGrupo);
-        p.rellenar(caja, 8.0, if sobre { tema::CONTROL_ACTIVO } else { rgba(0, 0, 0, 0.25) });
+        p.rellenar(
+            caja,
+            8.0,
+            if sobre {
+                tema::CONTROL_ACTIVO
+            } else {
+                rgba(0, 0, 0, 0.25)
+            },
+        );
         p.bordear(caja, 8.0, if sobre { tema::BORDE_FUERTE } else { tema::BORDE }, 1.0);
         let visual = self.cfg.grupos[g].icono.as_deref().and_then(icons::visual_propio);
         match visual {
@@ -1426,17 +1897,44 @@ impl Ajustes {
 
         let confirmar = self.confirmar_quitar;
         let ancho_botones = if confirmar { 64.0 + 112.0 } else { 100.0 };
-        self.campo_texto(p, rect(x + alto + 8.0, y, ancho - alto - 8.0 - ancho_botones, alto), CampoId::NombreGrupo, "Nombre del grupo", None);
+        self.campo_texto(
+            p,
+            rect(x + alto + 8.0, y, ancho - alto - 8.0 - ancho_botones, alto),
+            CampoId::NombreGrupo,
+            "Nombre del grupo",
+            None,
+        );
         let cy = y + alto / 2.0;
         let derecha = x + ancho;
         if confirmar {
-            self.icono_boton(p, derecha - 112.0 - 46.0, cy, glifo::IZQUIERDA, Accion::GrupoIzquierda, false);
-            self.icono_boton(p, derecha - 112.0 - 14.0, cy, glifo::DERECHA, Accion::GrupoDerecha, false);
+            self.icono_boton(
+                p,
+                derecha - 112.0 - 46.0,
+                cy,
+                glifo::IZQUIERDA,
+                Accion::GrupoIzquierda,
+                false,
+            );
+            self.icono_boton(
+                p,
+                derecha - 112.0 - 14.0,
+                cy,
+                glifo::DERECHA,
+                Accion::GrupoDerecha,
+                false,
+            );
             let r = rect(derecha - 104.0, y + 2.0, 104.0, alto - 4.0);
             let sobre = self.hover == Some(Accion::QuitarGrupo);
             p.rellenar(r, 8.0, if sobre { tema::PELIGRO } else { rgba(0, 0, 0, 0.25) });
             p.bordear(r, 8.0, tema::PELIGRO, 1.0);
-            p.texto("¿Quitar grupo?", r, 12.0, Peso::Semi, Alin::Centro, if sobre { tema::TEXTO_OSCURO } else { tema::PELIGRO });
+            p.texto(
+                "¿Quitar grupo?",
+                r,
+                12.0,
+                Peso::Semi,
+                Alin::Centro,
+                if sobre { tema::TEXTO_OSCURO } else { tema::PELIGRO },
+            );
             self.zona(r, Accion::QuitarGrupo);
         } else {
             self.icono_boton(p, derecha - 82.0, cy, glifo::IZQUIERDA, Accion::GrupoIzquierda, false);
@@ -1460,26 +1958,75 @@ impl Ajustes {
         self.zona(panel, Accion::Bloqueo);
 
         let (x0, x1) = (panel.left + 20.0, panel.right - 20.0);
-        p.texto("Elegir ícono", rect(x0, panel.top + 16.0, 200.0, 30.0), 17.0, Peso::Semi, Alin::Izq, tema::TEXTO);
-        self.icono_boton(p, x1 - 14.0, panel.top + 31.0, glifo::CERRAR, Accion::CerrarSelector, false);
-        self.segmentado(p, x1 - 40.0, panel.top + 31.0, &[
-            ("Lucide", Accion::ModoSelector(ModoSel::Lucide), modo == ModoSel::Lucide),
-            ("Archivo", Accion::ModoSelector(ModoSel::Archivo), modo == ModoSel::Archivo),
-        ]);
+        p.texto(
+            "Elegir ícono",
+            rect(x0, panel.top + 16.0, 200.0, 30.0),
+            17.0,
+            Peso::Semi,
+            Alin::Izq,
+            tema::TEXTO,
+        );
+        self.icono_boton(
+            p,
+            x1 - 14.0,
+            panel.top + 31.0,
+            glifo::CERRAR,
+            Accion::CerrarSelector,
+            false,
+        );
+        self.segmentado(
+            p,
+            x1 - 40.0,
+            panel.top + 31.0,
+            &[
+                ("Lucide", Accion::ModoSelector(ModoSel::Lucide), modo == ModoSel::Lucide),
+                (
+                    "Archivo",
+                    Accion::ModoSelector(ModoSel::Archivo),
+                    modo == ModoSel::Archivo,
+                ),
+            ],
+        );
 
         let actual = self.icono_objetivo();
         if actual.is_some() {
-            self.boton(p, rect(x0 + 150.0, panel.top + 15.0, 110.0, 32.0), "Automático", None, false, Accion::IconoAuto);
+            self.boton(
+                p,
+                rect(x0 + 150.0, panel.top + 15.0, 110.0, 32.0),
+                "Automático",
+                None,
+                false,
+                Accion::IconoAuto,
+            );
         }
         let y = panel.top + 62.0;
         let total = match modo {
             ModoSel::Lucide => {
-                self.campo_texto(p, rect(x0, y, x1 - x0, 36.0), CampoId::BuscarIcono, "Buscar ícono (en inglés: home, mail, music…)", Some(glifo::BUSCAR));
+                self.campo_texto(
+                    p,
+                    rect(x0, y, x1 - x0, 36.0),
+                    CampoId::BuscarIcono,
+                    "Buscar ícono (en inglés: home, mail, music…)",
+                    Some(glifo::BUSCAR),
+                );
                 self.lucide_filtrados.len()
             }
             ModoSel::Archivo => {
-                self.campo_texto(p, rect(x0, y, x1 - x0 - 44.0, 36.0), CampoId::Archivo, "Ruta de un .dll, .exe o .ico", None);
-                self.boton(p, rect(x1 - 36.0, y, 36.0, 36.0), "", Some(glifo::CARPETA), false, Accion::ExaminarIconos);
+                self.campo_texto(
+                    p,
+                    rect(x0, y, x1 - x0 - 44.0, 36.0),
+                    CampoId::Archivo,
+                    "Ruta de un .dll, .exe o .ico",
+                    None,
+                );
+                self.boton(
+                    p,
+                    rect(x1 - 36.0, y, 36.0, 36.0),
+                    "",
+                    Some(glifo::CARPETA),
+                    false,
+                    Accion::ExaminarIconos,
+                );
                 self.archivo_cantidad as usize
             }
         };
@@ -1487,7 +2034,12 @@ impl Ajustes {
         let area = rect(x0, y + 48.0, x1 - x0, panel.bottom - 40.0 - (y + 48.0));
         self.area_sel = area;
         p.rellenar(area, 10.0, rgba(0, 0, 0, 0.22));
-        let interior = rect(area.left + 6.0, area.top + 6.0, area.right - area.left - 12.0, area.bottom - area.top - 12.0);
+        let interior = rect(
+            area.left + 6.0,
+            area.top + 6.0,
+            area.right - area.left - 12.0,
+            area.bottom - area.top - 12.0,
+        );
         let cols = ((interior.right - interior.left) / CELDA).floor().max(1.0) as usize;
         let filas = total.div_ceil(cols);
         let alto_vis = interior.bottom - interior.top;
@@ -1520,11 +2072,15 @@ impl Ajustes {
                     ModoSel::Lucide => {
                         let i = self.lucide_filtrados[k];
                         let n = lucide::nombre_en(i);
-                        (Accion::ElegirLucide(i), actual.as_deref() == Some(format!("lucide:{n}").as_str()))
+                        (
+                            Accion::ElegirLucide(i),
+                            actual.as_deref() == Some(format!("lucide:{n}").as_str()),
+                        )
                     }
-                    ModoSel::Archivo => {
-                        (Accion::ElegirArchivo(k as i32), actual.as_deref() == Some(format!("archivo:{ruta},{k}").as_str()))
-                    }
+                    ModoSel::Archivo => (
+                        Accion::ElegirArchivo(k as i32),
+                        actual.as_deref() == Some(format!("archivo:{ruta},{k}").as_str()),
+                    ),
                 };
                 let sobre = self.hover == Some(accion);
                 if elegido {
@@ -1575,23 +2131,65 @@ impl Ajustes {
             (None, ModoSel::Lucide) => format!("{total} íconos de Lucide (lucide.dev, licencia ISC)"),
             (None, ModoSel::Archivo) => format!("{total} íconos en el archivo"),
         };
-        p.texto(&pie, rect(x0, panel.bottom - 34.0, x1 - x0, 24.0), 12.0, Peso::Normal, Alin::Izq, tema::TEXTO_2);
+        p.texto(
+            &pie,
+            rect(x0, panel.bottom - 34.0, x1 - x0, 24.0),
+            12.0,
+            Peso::Normal,
+            Alin::Izq,
+            tema::TEXTO_2,
+        );
     }
 
     fn acerca(&mut self, p: &mut Pintor, x: f32, cw: f32) {
         let mut y = self.titulo(p, x, cw, "Acerca de", "");
         let (cy, sig) = self.fila(p, x, y, cw, "Versión", "Lanzador radial para Windows, en Rust nativo.");
-        p.texto(env!("CARGO_PKG_VERSION"), rect(x + cw - 216.0, cy - 12.0, 200.0, 24.0), 13.0, Peso::Semi, Alin::Der, tema::TEXTO);
+        p.texto(
+            env!("CARGO_PKG_VERSION"),
+            rect(x + cw - 216.0, cy - 12.0, 200.0, 24.0),
+            13.0,
+            Peso::Semi,
+            Alin::Der,
+            tema::TEXTO,
+        );
         y = sig;
         y += 14.0;
         y = self.cabecera(p, x, y, cw, "Archivos");
         let ruta = config::ruta().display().to_string();
         let (cy, sig) = self.fila(p, x, y, cw, "config.json", &ruta);
-        self.boton(p, rect(x + cw - 16.0 - 220.0, cy - 16.0, 100.0, 32.0), "Abrir", None, false, Accion::AbrirConfig);
-        self.boton(p, rect(x + cw - 16.0 - 110.0, cy - 16.0, 110.0, 32.0), "Carpeta", Some(glifo::CARPETA), false, Accion::AbrirCarpeta);
+        self.boton(
+            p,
+            rect(x + cw - 16.0 - 220.0, cy - 16.0, 100.0, 32.0),
+            "Abrir",
+            None,
+            false,
+            Accion::AbrirConfig,
+        );
+        self.boton(
+            p,
+            rect(x + cw - 16.0 - 110.0, cy - 16.0, 110.0, 32.0),
+            "Carpeta",
+            Some(glifo::CARPETA),
+            false,
+            Accion::AbrirCarpeta,
+        );
         y = sig;
-        let (cy, sig) = self.fila(p, x, y, cw, "Salir de Orbyt", "Quita el ícono de la bandeja y deja de escuchar el botón.");
-        self.boton(p, rect(x + cw - 16.0 - 110.0, cy - 16.0, 110.0, 32.0), "Salir", Some(glifo::CERRAR), false, Accion::Salir);
+        let (cy, sig) = self.fila(
+            p,
+            x,
+            y,
+            cw,
+            "Salir de Orbyt",
+            "Quita el ícono de la bandeja y deja de escuchar el botón.",
+        );
+        self.boton(
+            p,
+            rect(x + cw - 16.0 - 110.0, cy - 16.0, 110.0, 32.0),
+            "Salir",
+            Some(glifo::CERRAR),
+            false,
+            Accion::Salir,
+        );
         y = sig + 14.0;
         y = self.cabecera(p, x, y, cw, "Cómo se usa");
         let texto = match self.cfg.modo {
@@ -1785,7 +2383,10 @@ fn hacer(d: Diferida, hwnd: HWND) {
             if let Some(ruta) = examinar(hwnd, filtro, w!("Elegir un archivo para la rueda")) {
                 con_ajustes(|a| {
                     if a.campos[CampoId::Nombre as usize].texto.trim().is_empty() {
-                        let nombre = std::path::Path::new(&ruta).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                        let nombre = std::path::Path::new(&ruta)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default();
                         a.campo(CampoId::Nombre).poner(&nombre);
                     }
                     a.campo(CampoId::Destino).poner(&ruta);
@@ -1800,7 +2401,10 @@ fn hacer(d: Diferida, hwnd: HWND) {
 // ─── Procedimiento de ventana ───────────────────────────────────────────────────────────────
 
 fn punto(lparam: LPARAM) -> (i32, i32) {
-    ((lparam.0 & 0xFFFF) as i16 as i32, ((lparam.0 >> 16) & 0xFFFF) as i16 as i32)
+    (
+        (lparam.0 & 0xFFFF) as i16 as i32,
+        ((lparam.0 >> 16) & 0xFFFF) as i16 as i32,
+    )
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -1809,7 +2413,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_GETMINMAXINFO => unsafe {
             let s = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
             let info = &mut *(lparam.0 as *mut MINMAXINFO);
-            info.ptMinTrackSize = POINT { x: (860.0 * s) as i32, y: (600.0 * s) as i32 };
+            info.ptMinTrackSize = POINT {
+                x: (860.0 * s) as i32,
+                y: (600.0 * s) as i32,
+            };
             return LRESULT(0);
         },
         WM_APPS_LISTA => {
@@ -1854,7 +2461,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             WM_SIZE => {
                 if let Some(rt) = &a.rt {
                     let (w, h) = ((lparam.0 & 0xFFFF) as u32, ((lparam.0 >> 16) & 0xFFFF) as u32);
-                    let _ = rt.Resize(&D2D_SIZE_U { width: w.max(1), height: h.max(1) });
+                    let _ = rt.Resize(&D2D_SIZE_U {
+                        width: w.max(1),
+                        height: h.max(1),
+                    });
                 }
                 a.invalidar();
             }
@@ -1863,7 +2473,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 a.rt = None;
                 a.pintor = None;
                 let r = &*(lparam.0 as *const RECT);
-                let _ = SetWindowPos(hwnd, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE);
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    r.left,
+                    r.top,
+                    r.right - r.left,
+                    r.bottom - r.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
                 a.invalidar();
             }
             WM_TIMER if wparam.0 == TIMER_CURSOR => {
@@ -1889,7 +2507,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     a.hover = nuevo;
                     a.invalidar();
                 }
-                let mut tme = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32, dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
+                let mut tme = TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                };
                 let _ = TrackMouseEvent(&mut tme);
             }
             WM_MOUSELEAVE => {
@@ -1944,7 +2567,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             WM_MOUSEWHEEL => {
                 let delta = ((wparam.0 >> 16) & 0xFFFF) as i16 as f32 / 120.0;
-                let mut pt = POINT { x: punto(lparam).0, y: punto(lparam).1 };
+                let mut pt = POINT {
+                    x: punto(lparam).0,
+                    y: punto(lparam).1,
+                };
                 let _ = ScreenToClient(hwnd, &mut pt);
                 let (x, y) = (pt.x as f32 / a.escala, pt.y as f32 / a.escala);
                 if a.selector.is_some() {

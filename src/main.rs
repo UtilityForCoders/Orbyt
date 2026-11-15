@@ -37,11 +37,11 @@ use hook::*;
 use render::{Baldosa, Escena, Renderer};
 use std::cell::RefCell;
 use std::sync::atomic::Ordering;
-use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use std::time::Instant;
 use windows::core::{w, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::*;
@@ -153,7 +153,23 @@ fn con_app<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
     })
 }
 
+/// Deja constancia de un fallo interno en `%APPDATA%\Orbyt\fallo.log`. La app no tiene consola:
+/// sin esto, un fallo solo se ve como que Orbyt desapareció de la bandeja.
+fn registrar_fallos() {
+    std::panic::set_hook(Box::new(|info| {
+        use std::io::Write;
+        let ruta = config::ruta().with_file_name("fallo.log");
+        if let Ok(mut archivo) = std::fs::OpenOptions::new().create(true).append(true).open(ruta) {
+            let cuando = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let _ = writeln!(archivo, "[{cuando}] Orbyt {}: {info}", env!("CARGO_PKG_VERSION"));
+        }
+    }));
+}
+
 fn main() -> Result<()> {
+    registrar_fallos();
     unsafe {
         // Una sola instancia: dos ganchos peleándose por el mismo botón no sirven para nada.
         let _mutex = CreateMutexW(None, true, w!("Local\\OrbytLanzadorRadial"))?;
@@ -331,13 +347,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     let _ = KillTimer(Some(hwnd), TIMER_MANTENER);
                 }
                 // Si el botón ya se soltó, el gancho dejó el estado en INACTIVO y esto no hace nada.
-                if ESTADO.compare_exchange(PENDIENTE, ABIERTA, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                if ESTADO
+                    .compare_exchange(PENDIENTE, ABIERTA, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     con_app(abrir);
                 }
             }
             TIMER_DEMO => unsafe {
                 let _ = KillTimer(Some(hwnd), TIMER_DEMO);
-                if ESTADO.compare_exchange(ABIERTA, INACTIVO, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                if ESTADO
+                    .compare_exchange(ABIERTA, INACTIVO, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     con_app(cerrar);
                 }
             },
@@ -378,7 +400,11 @@ fn reenviar_clic(boton: Boton) {
     let evento = |flags, datos: u16| INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
-            mi: MOUSEINPUT { dwFlags: flags, mouseData: datos as u32, ..Default::default() },
+            mi: MOUSEINPUT {
+                dwFlags: flags,
+                mouseData: datos as u32,
+                ..Default::default()
+            },
         },
     };
     let entradas = match boton {
@@ -395,7 +421,10 @@ fn abrir(app: &mut App) {
     let p = app.pulsado_en;
     unsafe {
         let monitor = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
-        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
         let _ = GetMonitorInfoW(monitor, &mut info);
         let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
         let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
@@ -406,7 +435,13 @@ fn abrir(app: &mut App) {
         let (ancho_monitor, alto_monitor) = (m.right - m.left, m.bottom - m.top);
         // El bitmap contiene solo la rueda y sus etiquetas, no el monitor completo. En 4K esto
         // reduce cada actualización de unos 32 MiB a alrededor de 1–2 MiB.
-        let mayor = app.grupos.iter().map(Vec::len).chain([app.raiz.len()]).max().unwrap_or(0);
+        let mayor = app
+            .grupos
+            .iter()
+            .map(Vec::len)
+            .chain([app.raiz.len()])
+            .max()
+            .unwrap_or(0);
         let margen = wheel::alcance(mayor) * escala;
         let ancho = ((2.0 * margen).ceil() as i32).min(ancho_monitor);
         let alto = ((2.0 * margen).ceil() as i32).min(alto_monitor);
@@ -420,9 +455,10 @@ fn abrir(app: &mut App) {
         };
         let centro_pantalla = match app.cfg.abrir_en {
             AbrirEn::Centro => ((m.left + m.right) as f32 / 2.0, (m.top + m.bottom) as f32 / 2.0),
-            AbrirEn::Cursor => {
-                (limitar(p.x as f32, m.left, m.right, ancho), limitar(p.y as f32, m.top, m.bottom, alto))
-            }
+            AbrirEn::Cursor => (
+                limitar(p.x as f32, m.left, m.right, ancho),
+                limitar(p.y as f32, m.top, m.bottom, alto),
+            ),
         };
         let origen = POINT {
             x: (centro_pantalla.0 - ancho as f32 / 2.0).round() as i32,
@@ -460,7 +496,15 @@ fn abrir(app: &mut App) {
         // El primer fotograma se pinta antes de mostrar la ventana, para que nunca se vea vacía.
         pintar(app);
         let _ = ShowWindow(app.hwnd, SW_SHOWNOACTIVATE);
-        let _ = SetWindowPos(app.hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let _ = SetWindowPos(
+            app.hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
         hook::poner_teclado(true);
         ritmo::empezar(app.hwnd);
     }
@@ -520,7 +564,9 @@ fn clic(app: &mut App, derecho: bool) -> Option<config::Acceso> {
 
 /// Recalcula la selección y el avance de la animación; solo repinta si algo cambió.
 fn actualizar(app: &mut App) {
-    let Some(nivel) = app.rueda.as_ref().map(|r| r.nivel) else { return };
+    let Some(nivel) = app.rueda.as_ref().map(|r| r.nivel) else {
+        return;
+    };
     let baldosas = app.baldosas(nivel);
     let n = baldosas.len();
     let cantidad_grupos = if nivel.is_none() { app.cfg.grupos.len() } else { 0 };
@@ -630,7 +676,10 @@ fn pintar(app: &mut App) {
         eprintln!("dibujar: {e}");
         return;
     }
-    let tam = SIZE { cx: r.ancho, cy: r.alto };
+    let tam = SIZE {
+        cx: r.ancho,
+        cy: r.alto,
+    };
     let origen_src = POINT::default();
     let mezcla = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
