@@ -53,15 +53,31 @@ static VENTANA: AtomicIsize = AtomicIsize::new(0);
 static GANCHO_RATON: AtomicIsize = AtomicIsize::new(0);
 static GANCHO_TECLADO: AtomicIsize = AtomicIsize::new(0);
 
+/// Instala el gancho del ratón. El del teclado no: solo hace falta con la rueda abierta (para
+/// Escape), y puesto todo el tiempo haría pasar cada tecla del sistema por este proceso.
 pub fn instalar(ventana: HWND) -> windows::core::Result<()> {
     VENTANA.store(ventana.0 as isize, Ordering::SeqCst);
     unsafe {
         let r = SetWindowsHookExW(WH_MOUSE_LL, Some(raton), None, 0)?;
         GANCHO_RATON.store(r.0 as isize, Ordering::SeqCst);
-        let t = SetWindowsHookExW(WH_KEYBOARD_LL, Some(teclado), None, 0)?;
-        GANCHO_TECLADO.store(t.0 as isize, Ordering::SeqCst);
     }
     Ok(())
+}
+
+/// Pone o quita el gancho del teclado. Llamar desde el hilo principal (el del bucle de mensajes),
+/// al abrir y al cerrar la rueda.
+pub fn poner_teclado(activo: bool) {
+    let actual = GANCHO_TECLADO.load(Ordering::SeqCst);
+    unsafe {
+        if activo && actual == 0 {
+            if let Ok(t) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(teclado), None, 0) {
+                GANCHO_TECLADO.store(t.0 as isize, Ordering::SeqCst);
+            }
+        } else if !activo && actual != 0 {
+            GANCHO_TECLADO.store(0, Ordering::SeqCst);
+            let _ = UnhookWindowsHookEx(HHOOK(actual as *mut _));
+        }
+    }
 }
 
 /// Quita los ganchos. Hay que hacerlo antes de salir del bucle de mensajes: un gancho de bajo
@@ -131,6 +147,14 @@ fn es_el_boton(msg: u32, datos: u32) -> Option<bool> {
 }
 
 unsafe extern "system" fn raton(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // Casi todo lo que llega es movimiento: sale por aquí sin mirar nada más. Con la rueda
+    // abierta, además, pide un fotograma si el pulso está parado.
+    if code == HC_ACTION as i32 && wparam.0 as u32 == WM_MOUSEMOVE {
+        if ESTADO.load(Ordering::Relaxed) == ABIERTA {
+            crate::ritmo::al_mover();
+        }
+        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+    }
     if code == HC_ACTION as i32 {
         let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
         // Los eventos inyectados (incluido el clic que Orbyt reenvía) pasan sin tocar.
