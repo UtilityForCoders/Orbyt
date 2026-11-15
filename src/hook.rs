@@ -4,12 +4,20 @@
 //! "traga" el clic central, y si no se traga, la ventana de debajo empieza el autodesplazamiento y
 //! arrastra la página mientras apuntas.
 //!
-//! Los ganchos se ejecutan en el hilo que los instaló (el principal, con su bucle de mensajes) y
+//! Los ganchos se ejecutan en el hilo que los instaló (uno propio, con su bucle de mensajes) y
 //! tienen que volver enseguida, así que no deciden nada: actualizan `ESTADO` y avisan a la ventana
-//! con `PostMessageW`. La ventana hace el trabajo cuando el gancho ya respondió.
+//! con `PostMessageW`. La ventana hace el trabajo en el hilo principal.
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU8, Ordering};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU8, Ordering};
+use std::sync::{mpsc, Mutex};
+use std::thread::JoinHandle;
+use windows::Win32::System::Threading::{
+    GetCurrentThread, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, SetThreadPriority,
+    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, THREAD_PRIORITY_HIGHEST,
+};
+use windows::core::PWSTR;
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use crate::config::Boton;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -40,6 +48,91 @@ static BOTON_ABAJO: AtomicBool = AtomicBool::new(false);
 static TRAGAR_IZQ: AtomicBool = AtomicBool::new(false);
 static TRAGAR_DER: AtomicBool = AtomicBool::new(false);
 
+/// Con una ventana a pantalla completa delante, el botón pasa sin tocar.
+static PAUSAR_PANTALLA_COMPLETA: AtomicBool = AtomicBool::new(true);
+/// Ejecutables (en minúsculas) en los que el botón pasa sin tocar.
+static EXCLUIDAS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Última ventana activa consultada y si su programa está excluido: abrir el proceso para leer
+/// su nombre solo hace falta cuando cambia la ventana.
+static ULTIMA_EXCLUIDA: Mutex<(isize, bool)> = Mutex::new((0, false));
+
+pub fn poner_exclusiones(pausar_pantalla_completa: bool, excluidas: &[String]) {
+    PAUSAR_PANTALLA_COMPLETA.store(pausar_pantalla_completa, Ordering::Relaxed);
+    let lista: Vec<String> = excluidas.iter().map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect();
+    *EXCLUIDAS.lock().unwrap_or_else(|e| e.into_inner()) = lista;
+    *ULTIMA_EXCLUIDA.lock().unwrap_or_else(|e| e.into_inner()) = (0, false);
+}
+
+/// ¿Hay que dejar pasar el botón a la ventana activa sin que Orbyt haga nada? Se decide en el
+/// gancho, al pulsar, así que solo hace llamadas que responden al instante.
+fn cedido() -> bool {
+    let activa = unsafe { GetForegroundWindow() };
+    if activa.is_invalid() {
+        return false;
+    }
+    (PAUSAR_PANTALLA_COMPLETA.load(Ordering::Relaxed) && pantalla_completa(activa)) || excluida(activa)
+}
+
+/// La ventana cubre todo su monitor y no tiene barra de título: un juego (exclusivo o "sin
+/// bordes") o un vídeo a pantalla completa. Una ventana maximizada conserva su barra y no cuenta;
+/// el escritorio tampoco.
+fn pantalla_completa(ventana: HWND) -> bool {
+    unsafe {
+        let mut clase = [0u16; 64];
+        let n = GetClassNameW(ventana, &mut clase) as usize;
+        let clase = String::from_utf16_lossy(&clase[..n]);
+        if matches!(clase.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
+            return false;
+        }
+        let mut rect = RECT::default();
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if GetWindowRect(ventana, &mut rect).is_err()
+            || !GetMonitorInfoW(MonitorFromWindow(ventana, MONITOR_DEFAULTTONEAREST), &mut info).as_bool()
+        {
+            return false;
+        }
+        cubre_monitor(&rect, &info.rcMonitor, GetWindowLongW(ventana, GWL_STYLE) as u32)
+    }
+}
+
+fn cubre_monitor(ventana: &RECT, monitor: &RECT, estilo: u32) -> bool {
+    estilo & WS_CAPTION.0 != WS_CAPTION.0
+        && ventana.left <= monitor.left
+        && ventana.top <= monitor.top
+        && ventana.right >= monitor.right
+        && ventana.bottom >= monitor.bottom
+}
+
+fn excluida(ventana: HWND) -> bool {
+    let lista = EXCLUIDAS.lock().unwrap_or_else(|e| e.into_inner());
+    if lista.is_empty() {
+        return false;
+    }
+    let mut ultima = ULTIMA_EXCLUIDA.lock().unwrap_or_else(|e| e.into_inner());
+    if ultima.0 == ventana.0 as isize {
+        return ultima.1;
+    }
+    let excluida = ejecutable_de(ventana).is_some_and(|exe| lista.contains(&exe));
+    *ultima = (ventana.0 as isize, excluida);
+    excluida
+}
+
+/// Nombre del ejecutable de una ventana, en minúsculas (`blender.exe`).
+fn ejecutable_de(ventana: HWND) -> Option<String> {
+    unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(ventana, Some(&mut pid));
+        let proceso = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut ruta = [0u16; 1024];
+        let mut largo = ruta.len() as u32;
+        let leido = QueryFullProcessImageNameW(proceso, PROCESS_NAME_WIN32, PWSTR(ruta.as_mut_ptr()), &mut largo);
+        let _ = CloseHandle(proceso);
+        leido.ok()?;
+        let ruta = String::from_utf16_lossy(&ruta[..largo as usize]);
+        ruta.rsplit(['\\', '/']).next().map(str::to_lowercase)
+    }
+}
+
 pub fn poner_modo_clic(clic: bool) {
     MODO_CLIC.store(clic, Ordering::Relaxed);
 }
@@ -50,47 +143,93 @@ pub fn terminar() {
     ESTADO.store(estado, Ordering::SeqCst);
 }
 static VENTANA: AtomicIsize = AtomicIsize::new(0);
-static GANCHO_RATON: AtomicIsize = AtomicIsize::new(0);
-static GANCHO_TECLADO: AtomicIsize = AtomicIsize::new(0);
 
-/// Instala el gancho del ratón. El del teclado no: solo hace falta con la rueda abierta (para
-/// Escape), y puesto todo el tiempo haría pasar cada tecla del sistema por este proceso.
+/// Identificador del hilo de los ganchos; 0 si no está en marcha.
+static HILO_ID: AtomicU32 = AtomicU32::new(0);
+static HILO: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+/// Mensaje de hilo: poner (`wparam` = 1) o quitar (0) el gancho del teclado.
+const WM_GANCHO_TECLADO: u32 = WM_APP + 60;
+
+/// Instala el gancho del ratón en un hilo propio, que no hace nada más que atenderlo.
+///
+/// Un gancho de bajo nivel se ejecuta en el hilo que lo instaló, y todo el ratón del sistema
+/// espera su respuesta. Si compartiera hilo con la ventana de ajustes y la extracción de íconos,
+/// cualquier trabajo largo ahí trabaría el puntero, y pasado el tiempo límite Windows quita el
+/// gancho sin avisar. Aquí el gancho solo toca atómicos y publica mensajes, así que siempre
+/// responde enseguida.
+///
+/// El del teclado no se instala todavía: solo hace falta con la rueda abierta (para Escape), y
+/// puesto todo el tiempo haría pasar cada tecla del sistema por este proceso.
 pub fn instalar(ventana: HWND) -> windows::core::Result<()> {
     VENTANA.store(ventana.0 as isize, Ordering::SeqCst);
-    unsafe {
-        let r = SetWindowsHookExW(WH_MOUSE_LL, Some(raton), None, 0)?;
-        GANCHO_RATON.store(r.0 as isize, Ordering::SeqCst);
+    let (listo, instalado) = mpsc::channel();
+    let hilo = std::thread::Builder::new()
+        .name("ganchos".into())
+        .spawn(move || unsafe {
+            // Crea la cola de mensajes del hilo antes de publicar su identificador.
+            let mut msg = MSG::default();
+            let _ = PeekMessageW(&mut msg, None, WM_USER, WM_USER, PM_NOREMOVE);
+            let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+            let raton_h = match SetWindowsHookExW(WH_MOUSE_LL, Some(raton), None, 0) {
+                Ok(h) => h,
+                Err(e) => {
+                    let _ = listo.send(Err(e));
+                    return;
+                }
+            };
+            HILO_ID.store(GetCurrentThreadId(), Ordering::SeqCst);
+            let _ = listo.send(Ok(()));
+            let mut teclado_h: Option<HHOOK> = None;
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                if msg.message == WM_GANCHO_TECLADO {
+                    if msg.wParam.0 != 0 {
+                        if teclado_h.is_none() {
+                            teclado_h = SetWindowsHookExW(WH_KEYBOARD_LL, Some(teclado), None, 0).ok();
+                        }
+                    } else if let Some(h) = teclado_h.take() {
+                        let _ = UnhookWindowsHookEx(h);
+                    }
+                } else {
+                    DispatchMessageW(&msg);
+                }
+            }
+            if let Some(h) = teclado_h {
+                let _ = UnhookWindowsHookEx(h);
+            }
+            let _ = UnhookWindowsHookEx(raton_h);
+        })
+        .map_err(|_| windows::core::Error::from_thread())?;
+    match instalado.recv() {
+        Ok(Ok(())) => {
+            *HILO.lock().unwrap_or_else(|e| e.into_inner()) = Some(hilo);
+            Ok(())
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(windows::core::Error::from_thread()),
     }
-    Ok(())
 }
 
-/// Pone o quita el gancho del teclado. Llamar desde el hilo principal (el del bucle de mensajes),
-/// al abrir y al cerrar la rueda.
+/// Pone o quita el gancho del teclado, al abrir y al cerrar la rueda. Lo hace el hilo de los
+/// ganchos: un gancho se atiende en el hilo que lo instala.
 pub fn poner_teclado(activo: bool) {
-    let actual = GANCHO_TECLADO.load(Ordering::SeqCst);
-    unsafe {
-        if activo && actual == 0 {
-            if let Ok(t) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(teclado), None, 0) {
-                GANCHO_TECLADO.store(t.0 as isize, Ordering::SeqCst);
-            }
-        } else if !activo && actual != 0 {
-            GANCHO_TECLADO.store(0, Ordering::SeqCst);
-            let _ = UnhookWindowsHookEx(HHOOK(actual as *mut _));
+    let id = HILO_ID.load(Ordering::SeqCst);
+    if id != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(id, WM_GANCHO_TECLADO, WPARAM(activo as usize), LPARAM(0));
         }
     }
 }
 
-/// Quita los ganchos. Hay que hacerlo antes de salir del bucle de mensajes: un gancho de bajo
-/// nivel se atiende en este hilo, y mientras siga puesto sin que nadie bombee mensajes, cada
-/// movimiento del ratón de todo el sistema espera a que Windows se canse de esperarlo.
+/// Quita los ganchos y espera a que su hilo termine. Se puede llamar más de una vez.
 pub fn quitar() {
-    for gancho in [&GANCHO_RATON, &GANCHO_TECLADO] {
-        let h = gancho.swap(0, Ordering::SeqCst);
-        if h != 0 {
-            unsafe {
-                let _ = UnhookWindowsHookEx(HHOOK(h as *mut _));
-            }
+    let id = HILO_ID.swap(0, Ordering::SeqCst);
+    if id != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(id, WM_QUIT, WPARAM(0), LPARAM(0));
         }
+    }
+    if let Some(hilo) = HILO.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        let _ = hilo.join();
     }
 }
 
@@ -164,6 +303,11 @@ unsafe extern "system" fn raton(code: i32, wparam: WPARAM, lparam: LPARAM) -> LR
             let clic = MODO_CLIC.load(Ordering::Relaxed);
             match es_el_boton(msg, info.mouseData) {
                 Some(true) => {
+                    // En un juego a pantalla completa o en un programa excluido el botón no es
+                    // para Orbyt: pasa tal cual, y su liberación también (el estado no cambia).
+                    if ESTADO.load(Ordering::SeqCst) == INACTIVO && cedido() {
+                        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+                    }
                     BOTON_ABAJO.store(true, Ordering::SeqCst);
                     if ESTADO
                         .compare_exchange(INACTIVO, PENDIENTE, Ordering::SeqCst, Ordering::SeqCst)
@@ -257,6 +401,16 @@ unsafe extern "system" fn teclado(code: i32, wparam: WPARAM, lparam: LPARAM) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn solo_cubrir_el_monitor_sin_barra_de_titulo_es_pantalla_completa() {
+        let monitor = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+        let (popup, normal) = (WS_POPUP.0, WS_OVERLAPPEDWINDOW.0);
+        assert!(cubre_monitor(&monitor, &monitor, popup));
+        // Maximizada: sobresale unos píxeles pero conserva la barra de título.
+        assert!(!cubre_monitor(&RECT { left: -8, top: -8, right: 1928, bottom: 1088 }, &monitor, normal));
+        assert!(!cubre_monitor(&RECT { left: 0, top: 0, right: 1920, bottom: 1040 }, &monitor, popup));
+    }
 
     #[test]
     fn empaquetar_conserva_coordenadas_negativas() {

@@ -19,6 +19,15 @@ fn datos(hwnd: HWND) -> NOTIFYICONDATAW {
     nid
 }
 
+/// Mensaje "TaskbarCreated": Windows lo anuncia a todas las ventanas cuando el Explorador se
+/// reinicia y la bandeja es nueva. Hay que volver a poner el ícono o desaparece.
+pub fn es_barra_creada(msg: u32) -> bool {
+    use std::sync::OnceLock;
+    static MENSAJE: OnceLock<u32> = OnceLock::new();
+    let id = *MENSAJE.get_or_init(|| unsafe { RegisterWindowMessageW(windows::core::w!("TaskbarCreated")) });
+    id != 0 && msg == id
+}
+
 pub fn agregar(hwnd: HWND) {
     unsafe {
         let mut nid = datos(hwnd);

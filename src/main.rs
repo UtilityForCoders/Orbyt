@@ -4,8 +4,9 @@
 //! sitio, apunta hacia un acceso y suelta. Un clic corto se reenvía tal cual, así que abrir
 //! enlaces en otra pestaña sigue funcionando.
 //!
-//! Todo ocurre en un solo hilo: los ganchos de entrada, la ventana de la rueda y el ícono de la
-//! bandeja comparten el bucle de mensajes del hilo principal.
+//! La ventana de la rueda, los ajustes y el ícono de la bandeja comparten el bucle de mensajes del
+//! hilo principal. Los ganchos de entrada van en un hilo propio (ver `hook.rs`) para que nada de
+//! lo que pase aquí pueda trabar el ratón del sistema.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // Un brazo de `match` que nombra una constante que no está importada no es un error: Rust lo lee
@@ -119,6 +120,7 @@ impl App {
         self.grupos = self.cfg.grupos.iter().map(render::baldosas_grupo).collect();
         hook::poner_boton(self.cfg.boton);
         hook::poner_modo_clic(self.cfg.modo == Modo::Clic);
+        hook::poner_exclusiones(self.cfg.pausar_pantalla_completa, &self.cfg.excluidas);
     }
 
     /// Baldosas del nivel que muestra la rueda.
@@ -364,6 +366,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             settings::cerrar();
             PostQuitMessage(0)
         },
+        m if tray::es_barra_creada(m) => tray::agregar(hwnd),
         _ => return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
     LRESULT(0)
