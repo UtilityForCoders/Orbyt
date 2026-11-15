@@ -153,7 +153,23 @@ fn con_app<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
     })
 }
 
+/// Deja constancia de un fallo interno en `%APPDATA%\Orbyt\fallo.log`. La app no tiene consola:
+/// sin esto, un fallo solo se ve como que Orbyt desapareció de la bandeja.
+fn registrar_fallos() {
+    std::panic::set_hook(Box::new(|info| {
+        use std::io::Write;
+        let ruta = config::ruta().with_file_name("fallo.log");
+        if let Ok(mut archivo) = std::fs::OpenOptions::new().create(true).append(true).open(ruta) {
+            let cuando = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let _ = writeln!(archivo, "[{cuando}] Orbyt {}: {info}", env!("CARGO_PKG_VERSION"));
+        }
+    }));
+}
+
 fn main() -> Result<()> {
+    registrar_fallos();
     unsafe {
         // Una sola instancia: dos ganchos peleándose por el mismo botón no sirven para nada.
         let _mutex = CreateMutexW(None, true, w!("Local\\OrbytLanzadorRadial"))?;
