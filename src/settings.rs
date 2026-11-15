@@ -1859,8 +1859,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             WM_TIMER if wparam.0 == TIMER_CURSOR => {
                 if a.foco.is_some() {
-                    a.cursor_visible = !a.cursor_visible;
-                    a.invalidar();
+                    // El parpadeo repinta la ventana entera: solo vale la pena si se ve. En
+                    // segundo plano o minimizada, el cursor queda fijo y no se repinta más.
+                    let visible = GetForegroundWindow() == hwnd && !IsIconic(hwnd).as_bool();
+                    if visible || !a.cursor_visible {
+                        a.cursor_visible = !a.cursor_visible || !visible;
+                        a.invalidar();
+                    }
                 }
             }
             WM_MOUSEMOVE => {

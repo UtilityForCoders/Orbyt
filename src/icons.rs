@@ -158,6 +158,12 @@ pub fn partir_archivo(s: &str) -> Option<(String, i32)> {
 
 /// El ícono automático de un destino.
 pub fn automatico(destino: &str) -> Option<Visual> {
+    // Primero la caché, que va por destino: así no se busca en el PATH ni se relee el favicon del
+    // disco para un ícono que ya se tiene. (El ícono provisional de una web sin favicon se guarda
+    // con otra clave, así que esa web sigue mirando el disco hasta que llegue el suyo.)
+    if let Some(v) = CACHE.with(|c| c.borrow().get(destino).cloned()) {
+        return v.map(Visual::Imagen);
+    }
     let img = match fuente(destino) {
         Fuente::Elemento(ruta) => de_cache(destino, || {
             let item: IShellItem = unsafe { SHCreateItemFromParsingName(&HSTRING::from(ruta), None).ok()? };

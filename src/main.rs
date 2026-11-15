@@ -89,13 +89,32 @@ struct App {
     renderer: Renderer,
     pulsado_en: POINT,
     rueda: Option<Rueda>,
+    /// Fecha y tamaño de `config.json` en la última lectura.
+    firma: Option<(std::time::SystemTime, u64)>,
+}
+
+fn firma_config() -> Option<(std::time::SystemTime, u64)> {
+    let m = std::fs::metadata(config::ruta()).ok()?;
+    Some((m.modified().ok()?, m.len()))
 }
 
 impl App {
+    /// Relee `config.json` solo si cambió desde la última vez. Se llama en cada pulsación del
+    /// botón (también en los clics cortos que se reenvían), así que leer y parsear el archivo y
+    /// rehacer las baldosas cada vez era trabajo tirado.
+    fn recargar_si_cambio(&mut self) {
+        let firma = firma_config();
+        if firma.is_none() || firma != self.firma {
+            self.recargar();
+        }
+    }
+
     /// Relee `config.json` y prepara los íconos. Los ya extraídos salen de la caché, así que
     /// después de la primera vez esto es casi gratis.
     fn recargar(&mut self) {
         self.cfg = config::cargar();
+        // Después de cargar: si el archivo no existía, `cargar` acaba de crearlo.
+        self.firma = firma_config();
         self.raiz = render::baldosas_raiz(&self.cfg);
         self.grupos = self.cfg.grupos.iter().map(render::baldosas_grupo).collect();
         hook::poner_boton(self.cfg.boton);
@@ -207,6 +226,7 @@ fn main() -> Result<()> {
             renderer: Renderer::nuevo().expect("no se pudo iniciar Direct2D"),
             pulsado_en: POINT::default(),
             rueda: None,
+            firma: None,
         };
         app.recargar();
         APP.with(|a| *a.borrow_mut() = Some(app));
@@ -256,8 +276,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 // El temporizador arranca antes de releer: el tiempo de leer el archivo (y algún
                 // ícono nuevo) corre a la vez que la espera, no después.
                 unsafe { SetTimer(Some(hwnd), TIMER_MANTENER, app.cfg.retardo_ms, None) };
-                // Se relee en cada pulsación: los cambios en config.json valen sin reiniciar.
-                app.recargar();
+                // Se comprueba en cada pulsación: los cambios en config.json valen sin reiniciar.
+                app.recargar_si_cambio();
             });
         }
         web::WM_ORBYT_FAVICON => {
@@ -438,11 +458,13 @@ fn abrir(app: &mut App) {
         pintar(app);
         let _ = ShowWindow(app.hwnd, SW_SHOWNOACTIVATE);
         let _ = SetWindowPos(app.hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        hook::poner_teclado(true);
         ritmo::empezar(app.hwnd);
     }
 }
 
 fn cerrar(app: &mut App) {
+    hook::poner_teclado(false);
     unsafe {
         ritmo::parar();
         let _ = ShowWindow(app.hwnd, SW_HIDE);
@@ -463,6 +485,8 @@ fn navegar(app: &mut App, nivel: Option<usize>) {
     r.inicio = Instant::now();
     r.progreso = 0.0;
     pintar(app);
+    // La animación vuelve a empezar: hace falta el pulso aunque estuviera parado.
+    ritmo::empezar(app.hwnd);
 }
 
 /// Modo clic: el izquierdo abre el grupo o la app apuntada; el derecho, o un clic en el centro,
@@ -555,11 +579,22 @@ fn actualizar(app: &mut App) {
     let t = (r.inicio.elapsed().as_secs_f32() * 1000.0 / APERTURA_MS).min(1.0);
     let progreso = 1.0 - (1.0 - t).powi(3); // ease-out cúbico
 
+    // El pulso solo hace falta si algo avanza con el tiempo aunque el ratón esté quieto: la
+    // apertura o una espera (entrar en un grupo, volver desde el centro). Si no, se para y los
+    // fotogramas los pide el gancho al mover el ratón.
+    let con_tiempo = progreso < 1.0 || r.apuntado.is_some() || r.en_centro.is_some();
+    let hwnd = app.hwnd;
+
     if seleccion != r.seleccion || progreso != r.progreso || progreso_grupo != r.progreso_grupo {
         r.seleccion = seleccion;
         r.progreso = progreso;
         r.progreso_grupo = progreso_grupo;
         pintar(app);
+    }
+    if con_tiempo {
+        ritmo::empezar(hwnd);
+    } else {
+        ritmo::parar();
     }
 }
 
