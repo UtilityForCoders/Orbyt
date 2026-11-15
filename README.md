@@ -106,11 +106,18 @@ JSON).
 `%APPDATA%\Orbyt\config.json`. Es lo que escribe la ventana de configuración, pero también se
 puede editar a mano: se crea con ejemplos la primera vez y se relee en cada pulsación.
 
+`pausar_pantalla_completa` deja pasar el botón cuando hay un juego o un vídeo a pantalla completa
+delante (también se cambia en Configuración). `excluidas` es la lista de programas, por el nombre
+de su `.exe`, en los que Orbyt no actúa: los que usan el botón mantenido para desplazar o girar
+la vista. Por ahora solo se edita aquí.
+
 ```json
 {
   "abrir_en": "cursor",
   "retardo_ms": 160,
   "modo": "soltar",
+  "pausar_pantalla_completa": true,
+  "excluidas": ["blender.exe", "figma.exe"],
   "grupos": [
     {
       "nombre": "Sistema",

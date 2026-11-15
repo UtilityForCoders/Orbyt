@@ -118,6 +118,7 @@ enum Accion {
     InicioWindows,
     Oscurecer,
     MostrarNombres,
+    PausarPantallaCompleta,
     Campo(CampoId),
     AgregarApp(usize),
     Elegir(usize),
@@ -693,6 +694,10 @@ impl Ajustes {
                 self.cfg.mostrar_nombres = !self.cfg.mostrar_nombres;
                 self.guardar();
             }
+            Accion::PausarPantallaCompleta => {
+                self.cfg.pausar_pantalla_completa = !self.cfg.pausar_pantalla_completa;
+                self.guardar();
+            }
             Accion::AgregarApp(i) => self.agregar_app(i),
             Accion::Elegir(i) => self.elegir(Some(i)),
             Accion::Subir(i) if i > 0 => {
@@ -1149,6 +1154,10 @@ impl Ajustes {
         let (cy, sig) = self.fila(p, x, y, cw, "Mostrar nombre seleccionado", "Muestra junto a la rueda el nombre del acceso al que apuntas.");
         let mn = self.cfg.mostrar_nombres;
         self.interruptor(p, x + cw - 16.0, cy, mn, Accion::MostrarNombres);
+        y = sig;
+        let (cy, sig) = self.fila(p, x, y, cw, "Pausar en pantalla completa", "Con un juego o un vídeo a pantalla completa, el botón funciona como siempre.");
+        let pc = self.cfg.pausar_pantalla_completa;
+        self.interruptor(p, x + cw - 16.0, cy, pc, Accion::PausarPantallaCompleta);
         y = sig;
         let (cy, sig) = self.fila(p, x, y, cw, "Opacidad de los botones", "Nivel de transparencia de los botones orbitales.");
         let v_op = (self.cfg.opacidad_fondo - config::OPACIDAD_MIN) / (config::OPACIDAD_MAX - config::OPACIDAD_MIN);

@@ -90,6 +90,14 @@ pub struct Config {
     pub oscurecer: bool,
     #[serde(default = "mostrar_nombres_defecto")]
     pub mostrar_nombres: bool,
+    /// Con una ventana a pantalla completa delante (un juego, un vídeo), Orbyt no actúa y el
+    /// botón llega tal cual: muchos juegos usan el botón central mantenido.
+    #[serde(default = "si")]
+    pub pausar_pantalla_completa: bool,
+    /// Programas en los que Orbyt no actúa, por el nombre de su ejecutable (`blender.exe`): los
+    /// que usan el botón mantenido para desplazar o girar la vista.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluidas: Vec<String>,
     #[serde(default = "opacidad_fondo_defecto")]
     pub opacidad_fondo: f32, // 0.1–1.0, afecta fondo de segmentos
     #[serde(default = "color_hover_defecto")]
@@ -196,6 +204,8 @@ impl Default for Config {
             zona_central: zona_defecto(),
             oscurecer: true,
             mostrar_nombres: mostrar_nombres_defecto(),
+            pausar_pantalla_completa: true,
+            excluidas: Vec::new(),
             opacidad_fondo: opacidad_fondo_defecto(),
             color_hover: color_hover_defecto(),
             grupos: vec![
@@ -252,6 +262,9 @@ pub fn cargar() -> Config {
             }
             Err(e) => {
                 eprintln!("config.json inválido ({e}); se usan los valores por defecto");
+                // Se guarda una copia: al cambiar algo en los ajustes se escribe un config.json
+                // nuevo, y sin ella se perderían los accesos del archivo mal escrito.
+                let _ = std::fs::copy(&ruta, ruta.with_file_name("config.invalido.json"));
                 Config::default()
             }
         },
@@ -261,7 +274,7 @@ pub fn cargar() -> Config {
                 let _ = std::fs::create_dir_all(dir);
             }
             if let Ok(json) = serde_json::to_string_pretty(&cfg) {
-                let _ = std::fs::write(&ruta, json);
+                let _ = escribir(&ruta, &json);
             }
             cfg
         }
@@ -275,7 +288,15 @@ pub fn guardar(cfg: &Config) -> std::io::Result<()> {
         std::fs::create_dir_all(dir)?;
     }
     let json = serde_json::to_string_pretty(cfg).map_err(std::io::Error::other)?;
-    std::fs::write(ruta, json)
+    escribir(&ruta, &json)
+}
+
+/// Escribe en un archivo aparte y lo renombra encima del definitivo: si el equipo se apaga a
+/// mitad de la escritura, queda el archivo anterior entero y no uno cortado.
+fn escribir(ruta: &std::path::Path, json: &str) -> std::io::Result<()> {
+    let temporal = ruta.with_extension("json.tmp");
+    std::fs::write(&temporal, json)?;
+    std::fs::rename(&temporal, ruta)
 }
 
 /// Expande `%VAR%` con las variables de entorno. Una variable desconocida se deja tal cual.
@@ -331,7 +352,9 @@ mod tests {
         assert_eq!(cfg.tamano, 1.0);
         assert!(cfg.grupos.is_empty());
         assert_eq!(cfg.modo, Modo::Soltar);
-        assert_eq!(cfg.mostrar_nombres, false);
+        assert!(!cfg.mostrar_nombres);
+        assert!(cfg.pausar_pantalla_completa);
+        assert!(cfg.excluidas.is_empty());
         assert_eq!(cfg.opacidad_fondo, 0.88);
         assert_eq!(cfg.color_hover, [72, 64, 96]);
     }
