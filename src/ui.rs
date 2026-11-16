@@ -8,8 +8,8 @@
 use crate::icons::{Icono, Visual};
 use crate::lucide::{self, Cmd};
 use std::collections::HashMap;
-use windows::core::{w, Result, HSTRING, PCWSTR};
 use windows::core::BOOL;
+use windows::core::{w, Result, HSTRING, PCWSTR};
 use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
 use windows::Win32::Graphics::DirectWrite::*;
@@ -20,7 +20,12 @@ pub type Color = D2D1_COLOR_F;
 pub type Rect = D2D_RECT_F;
 
 pub const fn rgba(r: u8, g: u8, b: u8, a: f32) -> Color {
-    Color { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0, a }
+    Color {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a,
+    }
 }
 
 /// Colores del tema. Todo es blanco o negro con distinta opacidad, para que funcione igual sobre
@@ -61,6 +66,7 @@ pub mod glifo {
     pub const IZQUIERDA: char = '\u{E76B}';
     pub const DERECHA: char = '\u{E76C}';
     pub const APAGAR: char = '\u{E7E8}';
+    pub const PROGRAMAS: char = '\u{E7F4}';
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -87,7 +93,12 @@ struct ClaveFormato {
 }
 
 pub fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
-    Rect { left: x, top: y, right: x + w, bottom: y + h }
+    Rect {
+        left: x,
+        top: y,
+        right: x + w,
+        bottom: y + h,
+    }
 }
 
 pub fn dentro(r: &Rect, x: f32, y: f32) -> bool {
@@ -135,7 +146,11 @@ impl Pintor {
             if radio <= 0.0 {
                 self.rt.FillRectangle(&r, self.color(&c));
             } else {
-                let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: radio, radiusY: radio };
+                let rr = D2D1_ROUNDED_RECT {
+                    rect: r,
+                    radiusX: radio,
+                    radiusY: radio,
+                };
                 self.rt.FillRoundedRectangle(&rr, self.color(&c));
             }
         }
@@ -144,24 +159,47 @@ impl Pintor {
     pub fn bordear(&self, r: Rect, radio: f32, c: Color, grosor: f32) {
         // Medio píxel hacia dentro: el trazo queda nítido y dentro del rectángulo.
         let m = grosor / 2.0;
-        let r = Rect { left: r.left + m, top: r.top + m, right: r.right - m, bottom: r.bottom - m };
-        let rr = D2D1_ROUNDED_RECT { rect: r, radiusX: radio, radiusY: radio };
+        let r = Rect {
+            left: r.left + m,
+            top: r.top + m,
+            right: r.right - m,
+            bottom: r.bottom - m,
+        };
+        let rr = D2D1_ROUNDED_RECT {
+            rect: r,
+            radiusX: radio,
+            radiusY: radio,
+        };
         unsafe { self.rt.DrawRoundedRectangle(&rr, self.color(&c), grosor, None) };
     }
 
     pub fn circulo(&self, cx: f32, cy: f32, radio: f32, c: Color) {
-        let e = D2D1_ELLIPSE { point: Vector2 { X: cx, Y: cy }, radiusX: radio, radiusY: radio };
+        let e = D2D1_ELLIPSE {
+            point: Vector2 { X: cx, Y: cy },
+            radiusX: radio,
+            radiusY: radio,
+        };
         unsafe { self.rt.FillEllipse(&e, self.color(&c)) };
     }
 
     pub fn borde_circulo(&self, cx: f32, cy: f32, radio: f32, c: Color, grosor: f32) {
-        let e = D2D1_ELLIPSE { point: Vector2 { X: cx, Y: cy }, radiusX: radio, radiusY: radio };
+        let e = D2D1_ELLIPSE {
+            point: Vector2 { X: cx, Y: cy },
+            radiusX: radio,
+            radiusY: radio,
+        };
         unsafe { self.rt.DrawEllipse(&e, self.color(&c), grosor, None) };
     }
 
     pub fn linea(&self, x0: f32, y0: f32, x1: f32, y1: f32, c: Color, grosor: f32) {
         unsafe {
-            self.rt.DrawLine(Vector2 { X: x0, Y: y0 }, Vector2 { X: x1, Y: y1 }, self.color(&c), grosor, None);
+            self.rt.DrawLine(
+                Vector2 { X: x0, Y: y0 },
+                Vector2 { X: x1, Y: y1 },
+                self.color(&c),
+                grosor,
+                None,
+            );
         }
     }
 
@@ -182,7 +220,11 @@ impl Pintor {
             Peso::Medio => DWRITE_FONT_WEIGHT_MEDIUM,
             Peso::Semi => DWRITE_FONT_WEIGHT_SEMI_BOLD,
         };
-        let familia: PCWSTR = if clave.glifo { PCWSTR(self.fuente_glifos.as_ptr()) } else { w!("Segoe UI Variable Text") };
+        let familia: PCWSTR = if clave.glifo {
+            PCWSTR(self.fuente_glifos.as_ptr())
+        } else {
+            w!("Segoe UI Variable Text")
+        };
         unsafe {
             let f = self
                 .dwrite
@@ -209,7 +251,11 @@ impl Pintor {
                 let _ = f.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                 let _ = f.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
                 if let Ok(elipsis) = self.dwrite.CreateEllipsisTrimmingSign(&f) {
-                    let recorte = DWRITE_TRIMMING { granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER, delimiter: 0, delimiterCount: 0 };
+                    let recorte = DWRITE_TRIMMING {
+                        granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+                        delimiter: 0,
+                        delimiterCount: 0,
+                    };
                     let _ = f.SetTrimming(&recorte, &elipsis);
                 }
             }
@@ -219,24 +265,48 @@ impl Pintor {
     }
 
     fn clave(tam: f32, peso: Peso, alin: Alin, multilinea: bool, glifo: bool) -> ClaveFormato {
-        ClaveFormato { tam: (tam * 10.0).round() as u32, peso, alin, multilinea, glifo }
+        ClaveFormato {
+            tam: (tam * 10.0).round() as u32,
+            peso,
+            alin,
+            multilinea,
+            glifo,
+        }
     }
 
     /// Una línea de texto centrada verticalmente en `r`; si no cabe, termina en "…".
     pub fn texto(&mut self, s: &str, r: Rect, tam: f32, peso: Peso, alin: Alin, c: Color) {
-        let Some(f) = self.formato(Self::clave(tam, peso, alin, false, false)) else { return };
+        let Some(f) = self.formato(Self::clave(tam, peso, alin, false, false)) else {
+            return;
+        };
         let t: Vec<u16> = s.encode_utf16().collect();
         unsafe {
-            self.rt.DrawText(&t, &f, &r, self.color(&c), D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+            self.rt.DrawText(
+                &t,
+                &f,
+                &r,
+                self.color(&c),
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
         }
     }
 
     /// Texto que salta de línea dentro de `r`, desde arriba.
     pub fn parrafo(&mut self, s: &str, r: Rect, tam: f32, c: Color) {
-        let Some(f) = self.formato(Self::clave(tam, Peso::Normal, Alin::Izq, true, false)) else { return };
+        let Some(f) = self.formato(Self::clave(tam, Peso::Normal, Alin::Izq, true, false)) else {
+            return;
+        };
         let t: Vec<u16> = s.encode_utf16().collect();
         unsafe {
-            self.rt.DrawText(&t, &f, &r, self.color(&c), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+            self.rt.DrawText(
+                &t,
+                &f,
+                &r,
+                self.color(&c),
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
         }
     }
 
@@ -247,10 +317,14 @@ impl Pintor {
 
     /// Ancho de las primeras `unidades` (UTF-16) de `s`: la posición del cursor de un campo.
     pub fn medir_hasta(&mut self, s: &str, tam: f32, peso: Peso, unidades: usize) -> f32 {
-        let Some(f) = self.formato(Self::clave(tam, peso, Alin::Izq, false, false)) else { return 0.0 };
+        let Some(f) = self.formato(Self::clave(tam, peso, Alin::Izq, false, false)) else {
+            return 0.0;
+        };
         let t: Vec<u16> = s.encode_utf16().collect();
         unsafe {
-            let Ok(capa) = self.dwrite.CreateTextLayout(&t, &f, 10_000.0, 100.0) else { return 0.0 };
+            let Ok(capa) = self.dwrite.CreateTextLayout(&t, &f, 10_000.0, 100.0) else {
+                return 0.0;
+            };
             if unidades >= t.len() {
                 let mut m = DWRITE_TEXT_METRICS::default();
                 let _ = capa.GetMetrics(&mut m);
@@ -264,12 +338,21 @@ impl Pintor {
     }
 
     pub fn glifo(&mut self, g: char, cx: f32, cy: f32, tam: f32, c: Color) {
-        let Some(f) = self.formato(Self::clave(tam, Peso::Normal, Alin::Centro, false, true)) else { return };
+        let Some(f) = self.formato(Self::clave(tam, Peso::Normal, Alin::Centro, false, true)) else {
+            return;
+        };
         let mut buf = [0u16; 2];
         let t = g.encode_utf16(&mut buf);
         let r = rect(cx - tam, cy - tam, tam * 2.0, tam * 2.0);
         unsafe {
-            self.rt.DrawText(t, &f, &r, self.color(&c), D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+            self.rt.DrawText(
+                t,
+                &f,
+                &r,
+                self.color(&c),
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
         }
     }
 
@@ -294,12 +377,23 @@ impl Pintor {
             Some(b) => b.clone(),
             None => {
                 let props = D2D1_BITMAP_PROPERTIES {
-                    pixelFormat: D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED },
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                    },
                     dpiX: 96.0,
                     dpiY: 96.0,
                 };
                 let creado = unsafe {
-                    self.rt.CreateBitmap(D2D_SIZE_U { width: n.ancho, height: n.alto }, Some(n.pixeles.as_ptr().cast()), n.ancho * 4, &props)
+                    self.rt.CreateBitmap(
+                        D2D_SIZE_U {
+                            width: n.ancho,
+                            height: n.alto,
+                        },
+                        Some(n.pixeles.as_ptr().cast()),
+                        n.ancho * 4,
+                        &props,
+                    )
                 };
                 let Ok(b) = creado else { return };
                 self.bitmaps.insert(clave, b.clone());
@@ -307,7 +401,8 @@ impl Pintor {
             }
         };
         unsafe {
-            self.rt.DrawBitmap(&b, Some(&r), opacidad, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None);
+            self.rt
+                .DrawBitmap(&b, Some(&r), opacidad, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None);
         }
     }
 
@@ -324,14 +419,26 @@ impl Pintor {
                 dashStyle: D2D1_DASH_STYLE_SOLID,
                 dashOffset: 0.0,
             };
-            self.trazo = unsafe { self.rt.GetFactory().ok().and_then(|f| f.CreateStrokeStyle(&props, None).ok()) };
+            self.trazo = unsafe {
+                self.rt
+                    .GetFactory()
+                    .ok()
+                    .and_then(|f| f.CreateStrokeStyle(&props, None).ok())
+            };
         }
         let lado = (r.right - r.left).min(r.bottom - r.top);
         let s = lado / 24.0;
         let mut previa = Matrix3x2::identity();
         unsafe {
             self.rt.GetTransform(&mut previa);
-            let m = Matrix3x2 { M11: s, M12: 0.0, M21: 0.0, M22: s, M31: r.left, M32: r.top };
+            let m = Matrix3x2 {
+                M11: s,
+                M12: 0.0,
+                M21: 0.0,
+                M22: s,
+                M31: r.left,
+                M32: r.top,
+            };
             self.rt.SetTransform(&(m * previa));
             self.rt.DrawGeometry(&geo, self.color(&c), 2.0, self.trazo.as_ref());
             self.rt.SetTransform(&previa);
@@ -391,16 +498,37 @@ impl Pintor {
         unsafe {
             match cmd {
                 Cmd::Linea(x, y) => sink.AddLine(v(x, y)),
-                Cmd::Cubica(x1, y1, x2, y2, x, y) => {
-                    sink.AddBezier(&D2D1_BEZIER_SEGMENT { point1: v(x1, y1), point2: v(x2, y2), point3: v(x, y) })
-                }
-                Cmd::Cuadratica(x1, y1, x, y) => sink.AddQuadraticBezier(&D2D1_QUADRATIC_BEZIER_SEGMENT { point1: v(x1, y1), point2: v(x, y) }),
-                Cmd::Arco { rx, ry, rot, grande, horario, x, y } => sink.AddArc(&D2D1_ARC_SEGMENT {
+                Cmd::Cubica(x1, y1, x2, y2, x, y) => sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                    point1: v(x1, y1),
+                    point2: v(x2, y2),
+                    point3: v(x, y),
+                }),
+                Cmd::Cuadratica(x1, y1, x, y) => sink.AddQuadraticBezier(&D2D1_QUADRATIC_BEZIER_SEGMENT {
+                    point1: v(x1, y1),
+                    point2: v(x, y),
+                }),
+                Cmd::Arco {
+                    rx,
+                    ry,
+                    rot,
+                    grande,
+                    horario,
+                    x,
+                    y,
+                } => sink.AddArc(&D2D1_ARC_SEGMENT {
                     point: v(x, y),
                     size: D2D_SIZE_F { width: rx, height: ry },
                     rotationAngle: rot,
-                    sweepDirection: if horario { D2D1_SWEEP_DIRECTION_CLOCKWISE } else { D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE },
-                    arcSize: if grande { D2D1_ARC_SIZE_LARGE } else { D2D1_ARC_SIZE_SMALL },
+                    sweepDirection: if horario {
+                        D2D1_SWEEP_DIRECTION_CLOCKWISE
+                    } else {
+                        D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+                    },
+                    arcSize: if grande {
+                        D2D1_ARC_SIZE_LARGE
+                    } else {
+                        D2D1_ARC_SIZE_SMALL
+                    },
                 }),
                 Cmd::Cerrar => {
                     sink.EndFigure(D2D1_FIGURE_END_CLOSED);
@@ -414,7 +542,12 @@ impl Pintor {
     /// Sombra suave hecha con capas: suficiente para despegar una baldosa del fondo.
     pub fn sombra(&self, r: Rect, radio: f32, intensidad: f32) {
         for (i, a) in [(6.0, 0.10), (3.0, 0.14), (1.0, 0.18)] {
-            let s = Rect { left: r.left - i * 0.5, top: r.top + i * 0.6, right: r.right + i * 0.5, bottom: r.bottom + i * 1.2 };
+            let s = Rect {
+                left: r.left - i * 0.5,
+                top: r.top + i * 0.6,
+                right: r.right + i * 0.5,
+                bottom: r.bottom + i * 1.2,
+            };
             self.rellenar(s, radio + i * 0.5, rgba(0, 0, 0, a * intensidad));
         }
     }

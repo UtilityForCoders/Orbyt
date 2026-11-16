@@ -9,12 +9,18 @@ use crate::lucide_datos::ICONOS;
 
 /// Datos de trazo de un ícono por nombre (`"globe"`, `"terminal"`...).
 pub fn trazo(nombre: &str) -> Option<&'static str> {
-    ICONOS.binary_search_by(|(n, _, _)| n.cmp(&nombre)).ok().map(|i| ICONOS[i].2)
+    ICONOS
+        .binary_search_by(|(n, _, _)| n.cmp(&nombre))
+        .ok()
+        .map(|i| ICONOS[i].2)
 }
 
 /// Nombre estático (para guardar referencias sin copiar).
 pub fn nombre(nombre: &str) -> Option<&'static str> {
-    ICONOS.binary_search_by(|(n, _, _)| n.cmp(&nombre)).ok().map(|i| ICONOS[i].0)
+    ICONOS
+        .binary_search_by(|(n, _, _)| n.cmp(&nombre))
+        .ok()
+        .map(|i| ICONOS[i].0)
 }
 
 #[cfg(test)]
@@ -37,7 +43,10 @@ pub fn buscar(q: &str) -> Vec<usize> {
     for (i, (n, claves, _)) in ICONOS.iter().enumerate() {
         if palabras.iter().all(|p| n.contains(p.as_str())) {
             por_nombre.push(i);
-        } else if palabras.iter().all(|p| n.contains(p.as_str()) || claves.contains(p.as_str())) {
+        } else if palabras
+            .iter()
+            .all(|p| n.contains(p.as_str()) || claves.contains(p.as_str()))
+        {
             por_clave.push(i);
         }
     }
@@ -51,7 +60,15 @@ pub enum Cmd {
     Linea(f32, f32),
     Cubica(f32, f32, f32, f32, f32, f32),
     Cuadratica(f32, f32, f32, f32),
-    Arco { rx: f32, ry: f32, rot: f32, grande: bool, horario: bool, x: f32, y: f32 },
+    Arco {
+        rx: f32,
+        ry: f32,
+        rot: f32,
+        grande: bool,
+        horario: bool,
+        x: f32,
+        y: f32,
+    },
     Cerrar,
 }
 
@@ -201,9 +218,19 @@ pub fn leer(d: &str) -> Vec<Cmd> {
             }
             b'A' => {
                 let (rx, ry, rot) = (num!(), num!(), num!());
-                let (Some(grande), Some(horario)) = (l.bandera(), l.bandera()) else { return cmds };
+                let (Some(grande), Some(horario)) = (l.bandera(), l.bandera()) else {
+                    return cmds;
+                };
                 let (ex, ey) = (bx + num!(), by + num!());
-                cmds.push(Cmd::Arco { rx: rx.abs(), ry: ry.abs(), rot, grande, horario, x: ex, y: ey });
+                cmds.push(Cmd::Arco {
+                    rx: rx.abs(),
+                    ry: ry.abs(),
+                    rot,
+                    grande,
+                    horario,
+                    x: ex,
+                    y: ey,
+                });
                 (x, y) = (ex, ey);
             }
             b'Z' => {
@@ -243,17 +270,50 @@ mod tests {
         let c = leer("M2 12h20");
         assert_eq!(c, vec![Cmd::Mover(2.0, 12.0), Cmd::Linea(22.0, 12.0)]);
         let c = leer("M10 10l5 5 5-5");
-        assert_eq!(c, vec![Cmd::Mover(10.0, 10.0), Cmd::Linea(15.0, 15.0), Cmd::Linea(20.0, 10.0)]);
+        assert_eq!(
+            c,
+            vec![Cmd::Mover(10.0, 10.0), Cmd::Linea(15.0, 15.0), Cmd::Linea(20.0, 10.0)]
+        );
         let c = leer("M1 1V5H3Z");
-        assert_eq!(c, vec![Cmd::Mover(1.0, 1.0), Cmd::Linea(1.0, 5.0), Cmd::Linea(3.0, 5.0), Cmd::Cerrar]);
+        assert_eq!(
+            c,
+            vec![
+                Cmd::Mover(1.0, 1.0),
+                Cmd::Linea(1.0, 5.0),
+                Cmd::Linea(3.0, 5.0),
+                Cmd::Cerrar
+            ]
+        );
     }
 
     #[test]
     fn lee_arcos_con_banderas_pegadas_y_numeros_con_dos_puntos() {
         let c = leer("M12 2a14.5 14.5 0 0 0 0 20");
-        assert_eq!(c[1], Cmd::Arco { rx: 14.5, ry: 14.5, rot: 0.0, grande: false, horario: false, x: 12.0, y: 22.0 });
+        assert_eq!(
+            c[1],
+            Cmd::Arco {
+                rx: 14.5,
+                ry: 14.5,
+                rot: 0.0,
+                grande: false,
+                horario: false,
+                x: 12.0,
+                y: 22.0
+            }
+        );
         let c = leer("M0 0a1 1 0 011 1");
-        assert_eq!(c[1], Cmd::Arco { rx: 1.0, ry: 1.0, rot: 0.0, grande: false, horario: true, x: 1.0, y: 1.0 });
+        assert_eq!(
+            c[1],
+            Cmd::Arco {
+                rx: 1.0,
+                ry: 1.0,
+                rot: 0.0,
+                grande: false,
+                horario: true,
+                x: 1.0,
+                y: 1.0
+            }
+        );
         let c = leer("M0 0l.5.5");
         assert_eq!(c[1], Cmd::Linea(0.5, 0.5));
     }

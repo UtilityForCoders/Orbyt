@@ -32,8 +32,15 @@ pub fn empezar(hwnd: HWND) {
     EN_COLA.store(false, Ordering::SeqCst);
     ACTIVO.store(true, Ordering::SeqCst);
     // Un único hilo para toda la vida del programa: se duerme cuando la rueda se cierra.
-    HILO.get_or_init(|| thread::Builder::new().name("ritmo".into()).spawn(bucle).expect("hilo de fotogramas").thread().clone())
-        .unpark();
+    HILO.get_or_init(|| {
+        thread::Builder::new()
+            .name("ritmo".into())
+            .spawn(bucle)
+            .expect("hilo de fotogramas")
+            .thread()
+            .clone()
+    })
+    .unpark();
 }
 
 pub fn parar() {
@@ -58,12 +65,43 @@ pub fn atendido() {
     EN_COLA.store(false, Ordering::SeqCst);
 }
 
+/// Espera un fotograma (16 ms). `park_timeout` y `sleep` redondean al tic del reloj de Windows
+/// (15,6 ms), así que 16 ms se convertían a menudo en 31: la animación iba a saltos entre 32 y
+/// 64 fps. Un temporizador de alta resolución (Windows 10 1803 en adelante) espera lo pedido sin
+/// subir la resolución del reloj de todo el sistema.
+fn esperar_fotograma() {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Threading::{
+        CreateWaitableTimerExW, SetWaitableTimer, WaitForSingleObject, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE,
+        TIMER_ALL_ACCESS,
+    };
+    thread_local! {
+        static RELOJ: Option<HANDLE> = unsafe {
+            CreateWaitableTimerExW(None, None, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS.0).ok()
+        };
+    }
+    let esperado = RELOJ.with(|reloj| {
+        let Some(reloj) = *reloj else { return false };
+        // Negativo: intervalo relativo, en unidades de 100 ns.
+        let plazo = -160_000i64;
+        unsafe {
+            SetWaitableTimer(reloj, &plazo, 0, None, None, false).is_ok() && {
+                WaitForSingleObject(reloj, INFINITE);
+                true
+            }
+        }
+    });
+    if !esperado {
+        thread::sleep(Duration::from_millis(16));
+    }
+}
+
 fn bucle() {
     loop {
         while !ACTIVO.load(Ordering::SeqCst) {
             thread::park();
         }
-        thread::park_timeout(Duration::from_millis(16));
+        esperar_fotograma();
         if ACTIVO.load(Ordering::SeqCst) && !EN_COLA.swap(true, Ordering::SeqCst) {
             let hwnd = HWND(VENTANA.load(Ordering::SeqCst) as *mut _);
             if unsafe { PostMessageW(Some(hwnd), WM_ORBYT_FOTOGRAMA, WPARAM(0), LPARAM(0)) }.is_err() {
