@@ -66,6 +66,7 @@ pub mod glifo {
     pub const IZQUIERDA: char = '\u{E76B}';
     pub const DERECHA: char = '\u{E76C}';
     pub const APAGAR: char = '\u{E7E8}';
+    pub const PROGRAMAS: char = '\u{E7F4}';
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

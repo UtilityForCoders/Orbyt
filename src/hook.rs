@@ -9,17 +9,18 @@
 //! con `PostMessageW`. La ventana hace el trabajo en el hilo principal.
 
 use crate::config::Boton;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::thread::JoinHandle;
-use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Threading::{
-    GetCurrentThread, GetCurrentThreadId, OpenProcess, QueryFullProcessImageNameW, SetThreadPriority,
-    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, THREAD_PRIORITY_HIGHEST,
+    GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_HIGHEST,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VK_BACK, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_LEFT, VK_LWIN, VK_RETURN, VK_RIGHT, VK_RWIN,
+    VK_SPACE, VK_UP,
+};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Mensajes que el gancho envía a la ventana principal.
@@ -29,6 +30,9 @@ pub const WM_ORBYT_RELEASE: u32 = WM_APP + 3;
 pub const WM_ORBYT_CANCEL: u32 = WM_APP + 4;
 /// En modo clic, un clic con la rueda abierta. `lparam` es 0 si es el izquierdo, 1 el derecho.
 pub const WM_ORBYT_CLIC: u32 = WM_APP + 5;
+/// Una tecla de la rueda (un número, una flecha, Intro, Espacio o Retroceso) con la rueda
+/// abierta. `lparam` es su código virtual.
+pub const WM_ORBYT_TECLA: u32 = WM_APP + 7;
 
 /// Sin nada en curso.
 pub const INACTIVO: u8 = 0;
@@ -42,6 +46,14 @@ pub const CANCELADA: u8 = 3;
 pub static ESTADO: AtomicU8 = AtomicU8::new(INACTIVO);
 /// Modo clic: la rueda sigue abierta al soltar el botón y se elige con clics.
 static MODO_CLIC: AtomicBool = AtomicBool::new(false);
+/// La rueda se abrió con el atajo de teclado: no hay botón mantenido, así que mientras dure se
+/// comporta como en modo clic aunque el modo elegido sea soltar.
+static POR_TECLADO: AtomicBool = AtomicBool::new(false);
+/// Tecla del atajo que abrió la rueda: mientras siga pulsada, sus repeticiones no cuentan como
+/// teclas de la rueda (un atajo con Espacio no debe "pulsar Espacio" en la rueda).
+static TECLA_ATAJO: AtomicU32 = AtomicU32::new(0);
+/// Teclas cuya pulsación se tragó (un bit por código virtual): su liberación también se traga.
+static TRAGADAS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
 /// El botón que abre la rueda está pulsado ahora mismo.
 static BOTON_ABAJO: AtomicBool = AtomicBool::new(false);
 /// Se tragó la pulsación de un clic: su liberación también hay que tragarla.
@@ -69,7 +81,7 @@ pub fn poner_exclusiones(pausar_pantalla_completa: bool, excluidas: &[String]) {
 
 /// ¿Hay que dejar pasar el botón a la ventana activa sin que Orbyt haga nada? Se decide en el
 /// gancho, al pulsar, así que solo hace llamadas que responden al instante.
-fn cedido() -> bool {
+pub fn cedido() -> bool {
     let activa = unsafe { GetForegroundWindow() };
     if activa.is_invalid() {
         return false;
@@ -119,29 +131,29 @@ fn excluida(ventana: HWND) -> bool {
     if ultima.0 == ventana.0 as isize {
         return ultima.1;
     }
-    let excluida = ejecutable_de(ventana).is_some_and(|exe| lista.contains(&exe));
+    let excluida = crate::ventanas::ejecutable_de(ventana).is_some_and(|exe| lista.contains(&exe));
     *ultima = (ventana.0 as isize, excluida);
     excluida
 }
 
-/// Nombre del ejecutable de una ventana, en minúsculas (`blender.exe`).
-fn ejecutable_de(ventana: HWND) -> Option<String> {
-    unsafe {
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(ventana, Some(&mut pid));
-        let proceso = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        let mut ruta = [0u16; 1024];
-        let mut largo = ruta.len() as u32;
-        let leido = QueryFullProcessImageNameW(proceso, PROCESS_NAME_WIN32, PWSTR(ruta.as_mut_ptr()), &mut largo);
-        let _ = CloseHandle(proceso);
-        leido.ok()?;
-        let ruta = String::from_utf16_lossy(&ruta[..largo as usize]);
-        ruta.rsplit(['\\', '/']).next().map(str::to_lowercase)
-    }
-}
-
 pub fn poner_modo_clic(clic: bool) {
     MODO_CLIC.store(clic, Ordering::Relaxed);
+}
+
+/// Marca que la rueda se abrió con el atajo de teclado (`tecla` es la del atajo), o que esa
+/// sesión terminó.
+pub fn poner_por_teclado(activo: bool, tecla: u32) {
+    TECLA_ATAJO.store(if activo { tecla } else { 0 }, Ordering::Relaxed);
+    POR_TECLADO.store(activo, Ordering::SeqCst);
+}
+
+pub fn por_teclado() -> bool {
+    POR_TECLADO.load(Ordering::Relaxed)
+}
+
+/// ¿Se elige con clics ahora mismo? Por el modo elegido o porque la rueda se abrió con el atajo.
+fn con_clics() -> bool {
+    MODO_CLIC.load(Ordering::Relaxed) || POR_TECLADO.load(Ordering::Relaxed)
 }
 
 /// La rueda se cerró: si el botón sigue pulsado, falta tragar su liberación.
@@ -195,6 +207,9 @@ pub fn instalar(ventana: HWND) -> windows::core::Result<()> {
                 if msg.message == WM_GANCHO_TECLADO {
                     if msg.wParam.0 != 0 {
                         if teclado_h.is_none() {
+                            for grupo in &TRAGADAS {
+                                grupo.store(0, Ordering::Relaxed);
+                            }
                             teclado_h = SetWindowsHookExW(WH_KEYBOARD_LL, Some(teclado), None, 0).ok();
                         }
                     } else if let Some(h) = teclado_h.take() {
@@ -314,7 +329,7 @@ unsafe extern "system" fn raton(code: i32, wparam: WPARAM, lparam: LPARAM) -> LR
         let inyectado = info.flags & LLMHF_INJECTED != 0;
         if !inyectado {
             let msg = wparam.0 as u32;
-            let clic = MODO_CLIC.load(Ordering::Relaxed);
+            let clic = con_clics();
             match es_el_boton(msg, info.mouseData) {
                 Some(true) => {
                     // En un juego a pantalla completa o en un programa excluido el botón no es
@@ -330,7 +345,7 @@ unsafe extern "system" fn raton(code: i32, wparam: WPARAM, lparam: LPARAM) -> LR
                         avisar(WM_ORBYT_DOWN, empaquetar(info.pt.x, info.pt.y));
                         return LRESULT(1);
                     }
-                    // Modo clic, con la rueda abierta: volver a pulsar el botón la cierra.
+                    // Modo clic (o abierta con el atajo): volver a pulsar el botón la cierra.
                     if ESTADO
                         .compare_exchange(ABIERTA, CANCELADA, Ordering::SeqCst, Ordering::SeqCst)
                         .is_ok()
@@ -394,19 +409,58 @@ unsafe extern "system" fn raton(code: i32, wparam: WPARAM, lparam: LPARAM) -> LR
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
+/// Teclas que la rueda entiende mientras está abierta: Escape, los números del 1 al 9 (también
+/// los del teclado numérico), las flechas, Intro, Espacio y Retroceso.
+fn es_tecla_de_rueda(vk: u32) -> bool {
+    matches!(vk, 0x31..=0x39 | 0x61..=0x69)
+        || [
+            VK_ESCAPE, VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN, VK_RETURN, VK_SPACE, VK_BACK,
+        ]
+        .iter()
+        .any(|t| t.0 as u32 == vk)
+}
+
+fn bit(vk: u32) -> (&'static AtomicU64, u64) {
+    (&TRAGADAS[(vk as usize / 64) % 4], 1u64 << (vk % 64))
+}
+
 unsafe extern "system" fn teclado(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code == HC_ACTION as i32 && ESTADO.load(Ordering::Relaxed) == ABIERTA {
+    if code == HC_ACTION as i32 {
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        if info.vkCode == VK_ESCAPE.0 as u32 {
-            let pulsada = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
-            if pulsada && ESTADO.load(Ordering::SeqCst) == ABIERTA {
-                // Con el botón aún pulsado queda CANCELADA (falta tragar su liberación); en modo
-                // clic, ya suelto, vuelve directamente a INACTIVO.
-                terminar();
-                avisar(WM_ORBYT_CANCEL, 0);
+        let vk = info.vkCode;
+        let inyectada = info.flags.0 & LLKHF_INJECTED.0 != 0;
+        let pulsada = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+        if !pulsada {
+            if TECLA_ATAJO.load(Ordering::Relaxed) == vk {
+                TECLA_ATAJO.store(0, Ordering::Relaxed);
             }
-            // Escape no llega a la ventana de debajo mientras la rueda está abierta.
-            return LRESULT(1);
+            // Solo se traga la liberación de una tecla cuya pulsación se tragó: si se pulsó antes
+            // de abrir la rueda, el programa de debajo tiene que enterarse de que se soltó.
+            let (grupo, mascara) = bit(vk);
+            if grupo.fetch_and(!mascara, Ordering::Relaxed) & mascara != 0 {
+                return LRESULT(1);
+            }
+        } else if !inyectada && es_tecla_de_rueda(vk) && ESTADO.load(Ordering::SeqCst) == ABIERTA {
+            let escape = vk == VK_ESCAPE.0 as u32;
+            // Con Ctrl, Alt o Win es un atajo de otro programa, no una tecla para la rueda.
+            let con_modificador = info.flags.0 & LLKHF_ALTDOWN.0 != 0
+                || [VK_CONTROL, VK_LWIN, VK_RWIN]
+                    .iter()
+                    .any(|m| unsafe { GetAsyncKeyState(m.0 as i32) } < 0);
+            if escape || (!con_modificador && TECLA_ATAJO.load(Ordering::Relaxed) != vk) {
+                let (grupo, mascara) = bit(vk);
+                grupo.fetch_or(mascara, Ordering::Relaxed);
+                if escape {
+                    // Con el botón aún pulsado queda CANCELADA (falta tragar su liberación); en
+                    // modo clic, ya suelto, vuelve directamente a INACTIVO.
+                    terminar();
+                    avisar(WM_ORBYT_CANCEL, 0);
+                } else {
+                    avisar(WM_ORBYT_TECLA, vk as isize);
+                }
+                // La tecla no llega a la ventana de debajo mientras la rueda está abierta.
+                return LRESULT(1);
+            }
         }
     }
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
@@ -447,6 +501,16 @@ mod tests {
             &monitor,
             popup
         ));
+    }
+
+    #[test]
+    fn la_rueda_solo_se_queda_con_sus_teclas() {
+        for vk in [0x1B, 0x31, 0x39, 0x61, 0x69, 0x25, 0x28, 0x0D, 0x20, 0x08] {
+            assert!(es_tecla_de_rueda(vk), "{vk:#x}");
+        }
+        for vk in [0x30, 0x60, 0x41, 0x70, 0x09, 0x2E] {
+            assert!(!es_tecla_de_rueda(vk), "{vk:#x}");
+        }
     }
 
     #[test]

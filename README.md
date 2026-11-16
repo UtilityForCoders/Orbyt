@@ -7,6 +7,8 @@ sitio: aparece una rueda con tus grupos de apps. Abre un grupo y elige una app, 
 botón o con clic, según el modo (ver [Grupos](#grupos)). **Escape** cancela. Un clic central corto
 se reenvía tal cual, así que abrir enlaces en otra pestaña sigue funcionando.
 
+También se puede abrir con un **atajo de teclado** y manejarla sin ratón (ver [Teclado](#teclado)).
+
 ## Uso
 
 ```bash
@@ -36,13 +38,18 @@ Abre la ventana de configuración al arrancar.
 
 Una ventana oscura con fondo acrílico (Windows 11), dibujada con Direct2D, con estas secciones:
 
-- **General**: dónde aparece la rueda (bajo el puntero o en el centro), el retardo y si Orbyt
-  se inicia con Windows.
+- **General**: dónde aparece la rueda (bajo el puntero o en el centro), el retardo, cuánto hay
+  que apuntar a un grupo para abrirlo y cuánto quedarse en el centro para volver, si Orbyt se
+  inicia con Windows y si se trae al frente la ventana de un programa que ya está abierto.
 - **Activación**: qué botón abre la rueda (central, lateral atrás o lateral adelante), si se
-  elige soltando el botón o con clic, y el tamaño de la zona central.
-- **Apariencia**: tamaño de la rueda y oscurecer el fondo, con una vista previa en vivo.
+  elige soltando el botón o con clic, el tamaño de la zona central y el atajo de teclado.
+- **Apariencia**: tamaño de la rueda, oscurecer el fondo, mostrar el nombre del acceso apuntado,
+  color de resaltado y opacidad de los botones, con una vista previa en vivo.
+- **Programas**: pausar en pantalla completa y la lista de programas excluidos (ver
+  [Programas](#programas)).
 - **Accesos**: los grupos y sus apps (ver abajo).
-- **Acerca de**: versión, abrir `config.json` o su carpeta, y salir de Orbyt.
+- **Acerca de**: versión y búsqueda de actualizaciones, abrir `config.json` o su carpeta,
+  exportar e importar la configuración, y salir de Orbyt.
 
 ### Accesos
 
@@ -52,14 +59,21 @@ La sección tiene dos columnas:
   Store, con su ícono. Haz clic en una para añadirla, o escribe en el buscador y pulsa
   **Enter** para añadir la primera que coincida.
 - **En el grupo**: las apps del grupo elegido, en el orden en que aparecen, empezando arriba y
-  en el sentido de las agujas del reloj. Al pasar el ratón por una fila aparecen los botones para subir, bajar o quitar. El
-  editor de abajo sirve para renombrar un acceso o crear uno propio (una carpeta, una URL, un
-  comando); el botón de carpeta elige un archivo o un acceso directo.
+  en el sentido de las agujas del reloj. Se reordenan arrastrándolas; al pasar el ratón por una
+  fila aparecen también los botones para subir, bajar o quitar. El editor de abajo sirve para
+  renombrar un acceso o crear uno propio (una carpeta, una URL, un comando); el botón de carpeta
+  elige un archivo o un acceso directo. Con **Como administrador**, el acceso se abre con
+  permisos elevados (Windows pide confirmación cada vez).
 
 Encima de la lista hay una pastilla por grupo; las apps que agregues desde la izquierda van al
 grupo elegido (si no hay ninguno, se crea uno). **+ Grupo** crea uno nuevo. Con un grupo elegido
 aparece una barra para cambiarle el ícono, el nombre y el orden, o quitarlo (pide un segundo
-clic). Todos los grupos se editan igual, también "Principal".
+clic). Las pastillas también se reordenan arrastrándolas. Todos los grupos se editan igual,
+también "Principal".
+
+En **Solo en** se escriben los programas en los que aparece el grupo (`code.exe, blender.exe`):
+así la rueda cambia según el programa que haya delante al abrirla. Vacío, el grupo aparece
+siempre.
 
 Cada cambio se guarda al momento y vale desde la siguiente pulsación.
 
@@ -75,13 +89,58 @@ En **Activación → Elegir con** hay dos modos:
 | | Soltar el botón | Clic |
 |---|---|---|
 | Abrir la rueda | Mantén el botón | Mantén el botón y suéltalo: la rueda queda abierta |
-| Abrir un grupo | Mantén la dirección estable durante 450 ms | Clic izquierdo sobre él |
+| Abrir un grupo | Mantén la dirección estable un momento (450 ms, ajustable) | Clic izquierdo sobre él |
 | Abrir una app | Apúntala y suelta | Clic izquierdo sobre ella |
 | Volver | Quédate un instante en el centro (muestra una flecha) | Clic derecho, o clic en el centro |
 | Cerrar | Suelta en el centro o pulsa **Escape** | Clic derecho o en el centro (en la rueda principal), **Escape** o el botón otra vez |
 
 Como en todo Orbyt, cuenta la dirección del puntero, no hace falta acertar encima del botón.
 En modo clic, los clics con la rueda abierta son para Orbyt y no llegan a la ventana de debajo.
+
+### Teclado
+
+En **Activación → Atajo** se elige una combinación (por ejemplo `Ctrl+Alt+Espacio`) que abre la
+rueda bajo el puntero sin tocar el ratón. Abierta así, la rueda se queda en pantalla y se elige
+con clic o con el teclado, sea cual sea el modo; pulsar el atajo otra vez la cierra.
+
+Con la rueda abierta, de cualquier forma:
+
+| Tecla | Qué hace |
+|---|---|
+| **1** a **9** | Abre ese grupo o esa app (el 1 es el de arriba) |
+| Flechas | Mueven la selección; **Intro** o **Espacio** la abren |
+| **Retroceso** | Vuelve a la rueda principal, o la cierra |
+| **Escape** | Cierra sin abrir nada |
+
+Esas teclas no llegan al programa de debajo mientras la rueda está abierta. Al mover el ratón,
+vuelve a mandar el puntero.
+
+### Programas
+
+Si el programa de un acceso ya tiene una ventana abierta, Orbyt la trae al frente en lugar de
+abrir otra (se desactiva en **General → Ir a la ventana abierta**). Un acceso con argumentos se
+abre siempre, porque pide algo concreto.
+
+En **Programas** se eligen los programas en los que Orbyt no actúa y el botón (y el atajo)
+funcionan como siempre: los que usan el botón mantenido para desplazar o girar la vista. Se
+escribe el nombre del `.exe` o se elige uno de los que están abiertos. Con **Pausar en pantalla
+completa** pasa lo mismo ante un juego o un vídeo a pantalla completa.
+
+Una limitación de Windows: sobre la ventana de un programa abierto como administrador, Orbyt no
+recibe el botón ni las teclas (un programa normal no puede escuchar a uno elevado), así que ahí
+la rueda no sale.
+
+### Avisos
+
+Orbyt avisa con una notificación de Windows cuando un acceso no se puede abrir, cuando
+`config.json` tiene un error (se usan los valores por defecto y queda una copia en
+`config.invalido.json`) o cuando el atajo de teclado ya lo usa otro programa.
+
+### Actualizaciones
+
+**Acerca de → Buscar actualización** pregunta a GitHub por el último release. Solo se hace al
+pulsar el botón, no envía ningún dato del equipo y no descarga nada: si hay versión nueva, abre
+su página en el navegador.
 
 ### Íconos
 
@@ -106,16 +165,12 @@ JSON).
 `%APPDATA%\Orbyt\config.json`. Es lo que escribe la ventana de configuración, pero también se
 puede editar a mano: se crea con ejemplos la primera vez y se relee en cada pulsación.
 
-`pausar_pantalla_completa` deja pasar el botón cuando hay un juego o un vídeo a pantalla completa
-delante (también se cambia en Configuración). `excluidas` es la lista de programas, por el nombre
-de su `.exe`, en los que Orbyt no actúa: los que usan el botón mantenido para desplazar o girar
-la vista. Por ahora solo se edita aquí.
-
 ```json
 {
   "abrir_en": "cursor",
   "retardo_ms": 160,
   "modo": "soltar",
+  "atajo": "Ctrl+Alt+Espacio",
   "pausar_pantalla_completa": true,
   "excluidas": ["blender.exe", "figma.exe"],
   "grupos": [
@@ -125,12 +180,13 @@ la vista. Por ahora solo se edita aquí.
         { "nombre": "Explorador", "destino": "explorer.exe" },
         { "nombre": "Descargas", "destino": "%USERPROFILE%\\Downloads" },
         { "nombre": "Ajustes", "destino": "ms-settings:" },
-        { "nombre": "Terminal", "destino": "cmd.exe", "argumentos": "/k echo hola" }
+        { "nombre": "Terminal", "destino": "cmd.exe", "argumentos": "/k echo hola", "admin": true }
       ]
     },
     {
       "nombre": "Agentes de IA",
       "icono": "lucide:bot",
+      "solo_en": ["code.exe"],
       "accesos": [
         { "nombre": "Claude", "destino": "https://claude.ai" },
         { "nombre": "ChatGPT", "destino": "https://chatgpt.com" }
@@ -144,14 +200,26 @@ la vista. Por ahora solo se edita aquí.
 - `retardo_ms`: cuánto hay que mantener el botón para que salga la rueda (80 a 600).
 - `boton`: `central`, `atras` o `adelante`.
 - `modo`: `soltar` (apuntar y soltar el botón) o `clic` (el botón abre la rueda y se elige con clic).
+- `atajo`: combinación de teclas que abre la rueda (`Ctrl+Alt+Espacio`, `Win+F1`, `F8`...). Lleva
+  Ctrl, Alt o Win, salvo las teclas de función. Sin él no hay atajo.
+- `espera_grupo_ms`: en modo soltar, cuánto apuntar a un grupo para que se abra (150 a 1500).
+- `espera_volver_ms`: en modo soltar, cuánto quedarse en el centro para volver (100 a 1000).
+- `enfocar_abiertas`: traer al frente la ventana de un programa ya abierto en vez de abrir otro.
 - `tamano`: escala de la rueda (0.8 a 1.4).
 - `zona_central`: radio del círculo central (cancelar o volver), en píxeles (20 a 60).
 - `oscurecer`: `true` o `false`.
-- `grupos`: cada uno con `nombre`, `icono` (opcional) y sus `accesos`. Un `accesos` suelto en la
-  raíz, de versiones anteriores, se convierte al cargar en un grupo "Principal".
+- `mostrar_nombres`: mostrar junto a la rueda el nombre del acceso apuntado.
+- `opacidad_fondo`: opacidad de los botones (0.1 a 1.0).
+- `color_hover`: color de resaltado, como `[rojo, verde, azul]` de 0 a 255.
+- `pausar_pantalla_completa`: no actuar con un juego o un vídeo a pantalla completa delante.
+- `excluidas`: programas, por el nombre de su `.exe`, en los que Orbyt no actúa.
+- `grupos`: cada uno con `nombre`, `icono` (opcional), `solo_en` (opcional: los programas en los
+  que aparece) y sus `accesos`. Un `accesos` suelto en la raíz, de versiones anteriores, se
+  convierte al cargar en un grupo "Principal".
 - `destino`: programa, carpeta, archivo, URL o URI. Acepta variables `%VAR%`. Las apps
   agregadas desde la lista usan `shell:AppsFolder\<id>`, que funciona igual para programas de
   escritorio y apps de la Store.
+- `argumentos` (opcional) y `admin` (opcional: `true` abre el acceso como administrador).
 
 ## Estructura
 
@@ -161,7 +229,10 @@ la vista. Por ahora solo se edita aquí.
 | `hook.rs` | Ganchos globales `WH_MOUSE_LL` / `WH_KEYBOARD_LL`, botón configurable |
 | `wheel.rs` | Geometría: qué sector cae bajo el puntero |
 | `render.rs` | La rueda de botones orbitales, sobre una ventana layered (y en la vista previa) |
-| `settings.rs` | Ventana de ajustes: barra lateral, secciones, listas y campos de texto propios |
+| `settings/` | Ventana de ajustes: `mod.rs` (estado, ventana y mensajes), `acciones.rs`, `controles.rs`, `secciones.rs`, `programas.rs`, `accesos.rs`, `selector.rs`, `teclado.rs` y `campo.rs` |
+| `ventanas.rs` | Ventanas de otros programas: cuál hay delante, cuáles están abiertas y traer una al frente |
+| `atajo.rs` | Leer y escribir el atajo de teclado |
+| `actualizacion.rs` | Consulta del último release en GitHub, bajo demanda |
 | `ui.rs` | Kit de dibujo compartido: tema oscuro, formas, texto, glifos de Segoe Fluent Icons |
 | `autostart.rs` | Iniciar con Windows (clave `Run` del usuario) |
 | `apps.rs` | Lista de apps instaladas desde `shell:AppsFolder`, en segundo plano |
@@ -170,9 +241,26 @@ la vista. Por ahora solo se edita aquí.
 | `lucide.rs` | Búsqueda de íconos Lucide y lectura de sus trazos SVG |
 | `lucide_datos.rs` | Datos de Lucide, generados por `scripts/generar_lucide.py` |
 | `config.rs` | Lectura, escritura y valores por defecto de `config.json` |
-| `launch.rs` | Abrir accesos con `ShellExecuteW` |
-| `tray.rs` | Ícono del área de notificación |
+| `launch.rs` | Abrir accesos con `ShellExecuteW`, también como administrador |
+| `tray.rs` | Ícono del área de notificación y avisos |
 | `menu.rs` | Menú propio del clic derecho en la bandeja, dibujado con Direct2D |
+
+## Instalación
+
+Cada release publica `orbyt.exe` y su suma SHA-256 en GitHub. El ejecutable no está firmado, así
+que la primera vez Windows SmartScreen puede avisar ("Más información" → "Ejecutar de todas
+formas"); conviene comprobar la suma con `Get-FileHash orbyt.exe`.
+
+Para publicarlo en winget, `scripts/generar-winget.ps1` escribe los tres manifiestos de una
+versión ya publicada, listos para enviar a `microsoft/winget-pkgs`:
+
+```bash
+pwsh scripts/generar-winget.ps1 -Version 0.2.0
+```
+
+## Licencia
+
+Orbyt se distribuye bajo licencia MIT; ver [LICENSE](LICENSE).
 
 ## Licencias de terceros
 
