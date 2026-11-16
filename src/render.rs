@@ -37,19 +37,16 @@ impl Baldosa {
     }
 }
 
-/// Baldosas de la rueda principal: los grupos (y accesos sueltos, si un config viejo los trae).
+/// Baldosas de la rueda principal: una por grupo, en el orden de `cfg.grupos`.
 pub fn baldosas_raiz(cfg: &Config) -> Vec<Baldosa> {
-    let grupos = cfg.grupos.iter().map(|g| Baldosa {
-        nombre: g.nombre.clone(),
-        visual: g.icono.as_deref().and_then(icons::visual_propio),
-        grupo: Some(g.accesos.iter().take(4).map(icons::visual).collect()),
-    });
-    let sueltos = cfg.accesos.iter().map(|a| Baldosa {
-        nombre: a.nombre.clone(),
-        visual: icons::visual(a),
-        grupo: None,
-    });
-    grupos.chain(sueltos).collect()
+    cfg.grupos
+        .iter()
+        .map(|g| Baldosa {
+            nombre: g.nombre.clone(),
+            visual: g.icono.as_deref().and_then(icons::visual_propio),
+            grupo: Some(g.accesos.iter().take(4).map(icons::visual).collect()),
+        })
+        .collect()
 }
 
 /// Baldosas de un grupo abierto.
@@ -429,7 +426,7 @@ pub fn pintar_rueda(p: &mut Pintor, e: &Escena) {
         let aviso = if e.grupo.is_some() {
             "Grupo vacío: vuelve al centro para salir"
         } else {
-            "Sin accesos: agrégalos en los ajustes"
+            "Sin grupos para este programa: agrégalos en los ajustes"
         };
         p.texto(aviso, caja, 12.5 * s, Peso::Medio, Alin::Centro, tema::TEXTO);
     }

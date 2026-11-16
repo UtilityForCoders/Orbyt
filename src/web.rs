@@ -116,7 +116,7 @@ pub fn pedir(host: String) {
 }
 
 /// Un GET por HTTPS con tiempos límite cortos. Devuelve el cuerpo si la respuesta es 200.
-fn descargar(servidor: &str, ruta: &str) -> Option<Vec<u8>> {
+pub(crate) fn descargar(servidor: &str, ruta: &str) -> Option<Vec<u8>> {
     struct Asa(*mut core::ffi::c_void);
     impl Drop for Asa {
         fn drop(&mut self) {

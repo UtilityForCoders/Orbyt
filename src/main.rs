@@ -15,7 +15,9 @@
 // `WM_MOUSELEAVE`, que vive en `UI::Controls`). Así deja de compilar en lugar de ser un aviso.
 #![deny(unreachable_patterns)]
 
+mod actualizacion;
 mod apps;
+mod atajo;
 mod autostart;
 mod config;
 mod hook;
@@ -29,6 +31,7 @@ mod ritmo;
 mod settings;
 mod tray;
 mod ui;
+mod ventanas;
 mod web;
 mod wheel;
 
@@ -52,10 +55,11 @@ const TIMER_MANTENER: usize = 1;
 const TIMER_DEMO: usize = 3;
 /// Duración de la animación de apertura.
 const APERTURA_MS: f32 = 140.0;
-/// Cuánto hay que apuntar a un grupo para que se abra.
-const ESPERA_GRUPO_MS: u128 = 450;
-/// Cuánto hay que quedarse en el centro, dentro de un grupo, para volver a la rueda principal.
-const ESPERA_VOLVER_MS: u128 = 300;
+/// Identificador del atajo de teclado global (`RegisterHotKey`).
+const ID_ATAJO: i32 = 1;
+/// Cuánto puede moverse el puntero (en píxeles) sin que el ratón le quite el mando al teclado:
+/// con el botón mantenido, la mano nunca está quieta del todo.
+const HOLGURA_TECLADO: i32 = 6;
 
 struct Rueda {
     /// Esquina superior izquierda del monitor, en coordenadas de pantalla.
@@ -76,6 +80,10 @@ struct Rueda {
     apuntado: Option<(usize, Instant)>,
     /// Dentro de un grupo, desde cuándo el puntero está en el círculo central (para volver).
     en_centro: Option<Instant>,
+    /// Se está usando el teclado: dónde estaba el puntero en la última tecla y qué baldosa
+    /// quedó elegida con ella. Mientras el puntero siga ahí manda el teclado, y las esperas del
+    /// ratón (abrir un grupo, volver desde el centro) no corren.
+    teclado: Option<(POINT, Option<usize>)>,
 }
 
 struct App {
@@ -83,8 +91,13 @@ struct App {
     /// Capa negra de opacidad constante; evita incluir todo el monitor en el bitmap de la rueda.
     fondo: HWND,
     cfg: Config,
-    /// Baldosas de la rueda principal: grupos primero y después accesos sueltos.
+    /// Una baldosa por grupo, en el mismo orden que `cfg.grupos`.
     raiz: Vec<Baldosa>,
+    /// Grupos que muestra la rueda principal (posiciones en `cfg.grupos`): los que no son de un
+    /// programa concreto y los del programa que había delante al abrirla.
+    vista: Vec<usize>,
+    /// Las baldosas de `vista`, en ese orden.
+    raiz_vista: Vec<Baldosa>,
     /// Baldosas de cada grupo, en el mismo orden que `cfg.grupos`.
     grupos: Vec<Vec<Baldosa>>,
     renderer: Renderer,
@@ -92,6 +105,11 @@ struct App {
     rueda: Option<Rueda>,
     /// Fecha y tamaño de `config.json` en la última lectura.
     firma: Option<(std::time::SystemTime, u64)>,
+    /// Atajo de teclado tal como se pidió registrar la última vez, y su tecla si se consiguió.
+    atajo: Option<String>,
+    tecla_atajo: u32,
+    /// Error de `config.json` del que ya se avisó, para no repetir el aviso en cada pulsación.
+    error_config: Option<String>,
 }
 
 fn firma_config() -> Option<(std::time::SystemTime, u64)> {
@@ -113,30 +131,86 @@ impl App {
     /// Relee `config.json` y prepara los íconos. Los ya extraídos salen de la caché, así que
     /// después de la primera vez esto es casi gratis.
     fn recargar(&mut self) {
-        self.cfg = config::cargar();
-        // Después de cargar: si el archivo no existía, `cargar` acaba de crearlo.
+        let (cfg, error) = config::leer();
+        self.cfg = cfg;
+        if error != self.error_config {
+            if let Some(e) = &error {
+                tray::avisar(
+                    "config.json tiene un error",
+                    &format!("Se usan los valores por defecto; hay una copia en config.invalido.json. {e}"),
+                );
+            }
+            self.error_config = error;
+        }
+        // Después de cargar: si el archivo no existía, `leer` acaba de crearlo.
         self.firma = firma_config();
         self.raiz = render::baldosas_raiz(&self.cfg);
         self.grupos = self.cfg.grupos.iter().map(render::baldosas_grupo).collect();
+        self.rehacer_vista();
         hook::poner_boton(self.cfg.boton);
         hook::poner_modo_clic(self.cfg.modo == Modo::Clic);
         hook::poner_exclusiones(self.cfg.pausar_pantalla_completa, &self.cfg.excluidas);
+        self.aplicar_atajo();
+    }
+
+    /// Elige los grupos de la rueda principal según el programa que hay delante.
+    fn elegir_vista(&mut self) {
+        let exe = ventanas::ejecutable_activo();
+        self.vista = (0..self.cfg.grupos.len())
+            .filter(|&g| self.cfg.grupos[g].visible_en(exe.as_deref()))
+            .collect();
+        self.rehacer_vista();
+    }
+
+    fn rehacer_vista(&mut self) {
+        self.vista.retain(|&g| g < self.raiz.len());
+        self.raiz_vista = self.vista.iter().map(|&g| self.raiz[g].clone()).collect();
+    }
+
+    /// Registra en Windows el atajo de teclado de la configuración, si cambió.
+    fn aplicar_atajo(&mut self) {
+        if self.cfg.atajo == self.atajo {
+            return;
+        }
+        unsafe {
+            let _ = UnregisterHotKey(Some(self.hwnd), ID_ATAJO);
+        }
+        // Se anota aunque falle: así el aviso sale una vez y no en cada recarga.
+        self.atajo = self.cfg.atajo.clone();
+        self.tecla_atajo = 0;
+        let Some(texto) = self.atajo.clone() else { return };
+        let registrado = atajo::leer(&texto).filter(|&(mods, vk)| unsafe {
+            RegisterHotKey(Some(self.hwnd), ID_ATAJO, HOT_KEY_MODIFIERS(mods) | MOD_NOREPEAT, vk).is_ok()
+        });
+        match registrado {
+            Some((_, vk)) => self.tecla_atajo = vk,
+            None => tray::avisar(
+                "El atajo de teclado no está disponible",
+                &format!("«{texto}» no es válido o ya lo usa otro programa. Elige otro en Configuración → Activación."),
+            ),
+        }
     }
 
     /// Baldosas del nivel que muestra la rueda.
     fn baldosas(&self, nivel: Option<usize>) -> &[Baldosa] {
         match nivel.and_then(|g| self.grupos.get(g)) {
             Some(b) => b,
-            None => &self.raiz,
+            None => &self.raiz_vista,
         }
     }
 
-    /// Acceso que abre la baldosa `i` del nivel; `None` si es un grupo.
+    /// Acceso que abre la baldosa `i` del nivel; `None` en la rueda principal, que solo tiene
+    /// grupos.
     fn acceso(&self, nivel: Option<usize>, i: usize) -> Option<config::Acceso> {
-        match nivel {
-            Some(g) => self.cfg.grupos.get(g)?.accesos.get(i).cloned(),
-            None => self.cfg.accesos.get(i.checked_sub(self.cfg.grupos.len())?).cloned(),
-        }
+        self.cfg.grupos.get(nivel?)?.accesos.get(i).cloned()
+    }
+}
+
+/// Abre el acceso elegido en la rueda, si lo hay.
+fn lanzar(elegido: Option<config::Acceso>) {
+    if let Some(acceso) = elegido {
+        let enfocar = con_app(|app| app.cfg.enfocar_abiertas).unwrap_or(true);
+        launch::abrir(&acceso, enfocar);
     }
 }
 
@@ -240,16 +314,22 @@ fn main() -> Result<()> {
             fondo,
             cfg: Config::default(),
             raiz: Vec::new(),
+            vista: Vec::new(),
+            raiz_vista: Vec::new(),
             grupos: Vec::new(),
             renderer: Renderer::nuevo().expect("no se pudo iniciar Direct2D"),
             pulsado_en: POINT::default(),
             rueda: None,
             firma: None,
+            atajo: None,
+            tecla_atajo: 0,
+            error_config: None,
         };
+        // El ícono va antes de leer la configuración: es por donde se avisa si está mal escrita.
+        tray::agregar(hwnd);
         app.recargar();
         APP.with(|a| *a.borrow_mut() = Some(app));
 
-        tray::agregar(hwnd);
         hook::instalar(hwnd)?;
         web::poner_aviso(hwnd);
 
@@ -324,9 +404,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 elegido
             })
             .flatten();
-            if let Some(acceso) = elegido {
-                launch::abrir(&acceso);
-            }
+            lanzar(elegido);
         }
         WM_ORBYT_CANCEL => {
             con_app(cerrar);
@@ -337,8 +415,33 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         WM_ORBYT_CLIC => {
             let elegido = con_app(|app| clic(app, lparam.0 == 1)).flatten();
-            if let Some(acceso) = elegido {
-                launch::abrir(&acceso);
+            lanzar(elegido);
+        }
+        WM_ORBYT_TECLA => {
+            let elegido = con_app(|app| tecla(app, lparam.0 as u32)).flatten();
+            lanzar(elegido);
+        }
+        WM_HOTKEY if wparam.0 as i32 == ID_ATAJO => {
+            // El atajo abre la rueda sin botón mantenido: queda abierta y se elige con clic o con
+            // el teclado. Pulsarlo otra vez la cierra. En un juego a pantalla completa o en un
+            // programa excluido no hace nada, igual que el botón.
+            match ESTADO.compare_exchange(INACTIVO, ABIERTA, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) if hook::cedido() => ESTADO.store(INACTIVO, Ordering::SeqCst),
+                Ok(_) => {
+                    con_app(|app| {
+                        hook::poner_por_teclado(true, app.tecla_atajo);
+                        unsafe {
+                            let _ = GetCursorPos(&mut app.pulsado_en);
+                        }
+                        app.recargar_si_cambio();
+                        abrir(app);
+                    });
+                }
+                Err(ABIERTA) => {
+                    hook::terminar();
+                    con_app(cerrar);
+                }
+                Err(_) => {}
             }
         }
         WM_TIMER => match wparam.0 {
@@ -385,6 +488,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             // con el proceso aún vivo (dejar que se destruyan al terminar el proceso tardaba
             // varios segundos, y con los ganchos puestos el puntero se congelaba).
             hook::quitar();
+            let _ = UnregisterHotKey(Some(hwnd), ID_ATAJO);
             settings::cerrar();
             PostQuitMessage(0)
         },
@@ -419,6 +523,8 @@ fn reenviar_clic(boton: Boton) {
 
 fn abrir(app: &mut App) {
     let p = app.pulsado_en;
+    // La rueda no toma el foco: el programa de delante sigue siendo el que había al pulsar.
+    app.elegir_vista();
     unsafe {
         let monitor = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
         let mut info = MONITORINFO {
@@ -436,10 +542,11 @@ fn abrir(app: &mut App) {
         // El bitmap contiene solo la rueda y sus etiquetas, no el monitor completo. En 4K esto
         // reduce cada actualización de unos 32 MiB a alrededor de 1–2 MiB.
         let mayor = app
-            .grupos
+            .vista
             .iter()
+            .filter_map(|&g| app.grupos.get(g))
             .map(Vec::len)
-            .chain([app.raiz.len()])
+            .chain([app.raiz_vista.len()])
             .max()
             .unwrap_or(0);
         let margen = wheel::alcance(mayor) * escala;
@@ -479,6 +586,7 @@ fn abrir(app: &mut App) {
             nivel: None,
             apuntado: None,
             en_centro: None,
+            teclado: None,
         });
         if app.cfg.oscurecer {
             let _ = SetWindowPos(
@@ -512,6 +620,7 @@ fn abrir(app: &mut App) {
 
 fn cerrar(app: &mut App) {
     hook::poner_teclado(false);
+    hook::poner_por_teclado(false, 0);
     unsafe {
         ritmo::parar();
         let _ = ShowWindow(app.hwnd, SW_HIDE);
@@ -526,6 +635,7 @@ fn navegar(app: &mut App, nivel: Option<usize>) {
     r.nivel = nivel;
     r.apuntado = None;
     r.en_centro = None;
+    r.teclado = None;
     r.seleccion = None;
     r.progreso_grupo = 0.0;
     // La animación de apertura se repite: las baldosas del nuevo nivel salen del centro.
@@ -536,24 +646,16 @@ fn navegar(app: &mut App, nivel: Option<usize>) {
     ritmo::empezar(app.hwnd);
 }
 
-/// Modo clic: el izquierdo abre el grupo o la app apuntada; el derecho, o un clic en el centro,
-/// vuelve a la rueda principal o, si ya está en ella, la cierra. Devuelve el acceso a abrir.
-fn clic(app: &mut App, derecho: bool) -> Option<config::Acceso> {
-    actualizar(app);
-    let r = app.rueda.as_ref()?;
-    let (nivel, seleccion) = (r.nivel, r.seleccion);
-    let Some(i) = seleccion.filter(|_| !derecho) else {
-        match nivel {
-            Some(_) => navegar(app, None),
-            None => {
-                cerrar(app);
-                hook::terminar();
-            }
+/// Abre la baldosa `i` del nivel actual: entra en el grupo o devuelve el acceso a lanzar (y cierra
+/// la rueda). `por_tecla` deja el mando en el teclado después de entrar en un grupo.
+fn activar(app: &mut App, i: usize, por_tecla: bool) -> Option<config::Acceso> {
+    let nivel = app.rueda.as_ref()?.nivel;
+    if nivel.is_none() {
+        let grupo = *app.vista.get(i)?;
+        navegar(app, Some(grupo));
+        if por_tecla {
+            mandar_con_teclado(app, None);
         }
-        return None;
-    };
-    if nivel.is_none() && app.raiz.get(i).is_some_and(Baldosa::es_grupo) {
-        navegar(app, Some(i));
         return None;
     }
     let acceso = app.acceso(nivel, i);
@@ -562,17 +664,95 @@ fn clic(app: &mut App, derecho: bool) -> Option<config::Acceso> {
     acceso
 }
 
+/// Vuelve a la rueda principal o, si ya está en ella, la cierra.
+fn volver(app: &mut App, por_tecla: bool) {
+    match app.rueda.as_ref().map(|r| r.nivel) {
+        Some(Some(_)) => {
+            navegar(app, None);
+            if por_tecla {
+                mandar_con_teclado(app, None);
+            }
+        }
+        Some(None) => {
+            cerrar(app);
+            hook::terminar();
+        }
+        None => {}
+    }
+}
+
+/// Deja el mando en el teclado, con `seleccion` elegida, hasta que el puntero se mueva.
+fn mandar_con_teclado(app: &mut App, seleccion: Option<usize>) {
+    let mut p = POINT::default();
+    unsafe {
+        let _ = GetCursorPos(&mut p);
+    }
+    if let Some(r) = app.rueda.as_mut() {
+        r.teclado = Some((p, seleccion));
+    }
+    actualizar(app);
+}
+
+/// Modo clic: el izquierdo abre el grupo o la app apuntada; el derecho, o un clic en el centro,
+/// vuelve a la rueda principal o, si ya está en ella, la cierra. Devuelve el acceso a abrir.
+fn clic(app: &mut App, derecho: bool) -> Option<config::Acceso> {
+    actualizar(app);
+    match app.rueda.as_ref()?.seleccion.filter(|_| !derecho) {
+        Some(i) => activar(app, i, false),
+        None => {
+            volver(app, false);
+            None
+        }
+    }
+}
+
+/// Una tecla con la rueda abierta: un número abre esa baldosa, las flechas mueven la selección,
+/// Intro o Espacio abren la elegida y Retroceso vuelve atrás. Devuelve el acceso a abrir.
+fn tecla(app: &mut App, vk: u32) -> Option<config::Acceso> {
+    actualizar(app);
+    let (nivel, actual) = app.rueda.as_ref().map(|r| (r.nivel, r.seleccion))?;
+    let n = app.baldosas(nivel).len();
+    let es = |t: VIRTUAL_KEY| t.0 as u32 == vk;
+    match vk {
+        // Fila de números y teclado numérico: el 1 es la baldosa de arriba.
+        0x31..=0x39 | 0x61..=0x69 => {
+            let i = (vk & 0x0F) as usize - 1;
+            if i < n {
+                return activar(app, i, true);
+            }
+        }
+        _ if es(VK_RETURN) || es(VK_SPACE) => {
+            if let Some(i) = actual {
+                return activar(app, i, true);
+            }
+        }
+        _ if es(VK_BACK) => volver(app, true),
+        _ if n > 0 => {
+            let adelante = es(VK_RIGHT) || es(VK_DOWN);
+            let i = match actual {
+                Some(i) if adelante => (i + 1) % n,
+                Some(i) => (i + n - 1) % n,
+                None if adelante => 0,
+                None => n - 1,
+            };
+            mandar_con_teclado(app, Some(i));
+        }
+        _ => {}
+    }
+    None
+}
+
 /// Recalcula la selección y el avance de la animación; solo repinta si algo cambió.
 fn actualizar(app: &mut App) {
     let Some(nivel) = app.rueda.as_ref().map(|r| r.nivel) else {
         return;
     };
-    let baldosas = app.baldosas(nivel);
-    let n = baldosas.len();
-    let cantidad_grupos = if nivel.is_none() { app.cfg.grupos.len() } else { 0 };
+    let n = app.baldosas(nivel).len();
     let zona = app.cfg.zona_central;
-    // En modo clic se navega con clics, no esperando.
-    let por_espera = app.cfg.modo == Modo::Soltar;
+    let espera_grupo = app.cfg.espera_grupo_ms as u128;
+    let espera_volver = app.cfg.espera_volver_ms as u128;
+    // En modo clic (o con la rueda abierta desde el teclado) se navega con clics, no esperando.
+    let por_espera = app.cfg.modo == Modo::Soltar && !hook::por_teclado();
     let Some(r) = app.rueda.as_mut() else { return };
     let mut p = POINT::default();
     unsafe {
@@ -581,16 +761,35 @@ fn actualizar(app: &mut App) {
     let dx = (p.x - r.origen.x) as f32 - r.centro.0;
     let dy = (p.y - r.origen.y) as f32 - r.centro.1;
     let radio_central = zona * r.escala;
-    let seleccion = wheel::sector_en(dx, dy, n, radio_central);
     let distancia = (dx * dx + dy * dy).sqrt();
+    // Con el puntero donde estaba en la última tecla, manda el teclado; si se movió, el ratón.
+    let con_teclado = match r.teclado {
+        Some((donde, elegida))
+            if (p.x - donde.x).abs() <= HOLGURA_TECLADO && (p.y - donde.y).abs() <= HOLGURA_TECLADO =>
+        {
+            Some(elegida.filter(|&i| i < n))
+        }
+        _ => {
+            r.teclado = None;
+            None
+        }
+    };
+    let seleccion = match con_teclado {
+        Some(elegida) => elegida,
+        None => wheel::sector_en(dx, dy, n, radio_central),
+    };
     let ahora = Instant::now();
     let mut progreso_grupo = 0.0;
 
     // Navegación entre niveles.
     let mut cambio: Option<Option<usize>> = None;
     match r.nivel {
-        _ if !por_espera => {}
-        None => match seleccion.filter(|&i| i < cantidad_grupos) {
+        _ if !por_espera || con_teclado.is_some() => {
+            r.apuntado = None;
+            r.en_centro = None;
+        }
+        // En la rueda principal todas las baldosas son grupos.
+        None => match seleccion {
             Some(i) => {
                 let desde = match r.apuntado {
                     Some((g, t)) if g == i => t,
@@ -599,11 +798,12 @@ fn actualizar(app: &mut App) {
                         ahora
                     }
                 };
-                progreso_grupo = (ahora.duration_since(desde).as_millis() as f32 / ESPERA_GRUPO_MS as f32).min(1.0);
+                let pasado = ahora.duration_since(desde).as_millis();
+                progreso_grupo = (pasado as f32 / espera_grupo as f32).min(1.0);
                 // Exige una dirección estable. Alejar el puntero no confirma por sí solo: ese
                 // atajo abría grupos accidentalmente durante movimientos rápidos.
-                if ahora.duration_since(desde).as_millis() >= ESPERA_GRUPO_MS {
-                    cambio = Some(Some(i));
+                if pasado >= espera_grupo {
+                    cambio = app.vista.get(i).map(|&g| Some(g));
                 }
             }
             None => r.apuntado = None,
@@ -612,7 +812,7 @@ fn actualizar(app: &mut App) {
             // Volver: quedarse un momento en el círculo central (soltar ahí sigue cancelando).
             if distancia < radio_central {
                 let desde = *r.en_centro.get_or_insert(ahora);
-                if ahora.duration_since(desde).as_millis() >= ESPERA_VOLVER_MS {
+                if ahora.duration_since(desde).as_millis() >= espera_volver {
                     cambio = Some(None);
                 }
             } else {
@@ -657,7 +857,7 @@ fn pintar(app: &mut App) {
     // Por campos y no con `app.baldosas()`: el renderer se presta mutable a la vez.
     let baldosas: &[Baldosa] = match r.nivel.and_then(|g| app.grupos.get(g)) {
         Some(b) => b,
-        None => &app.raiz,
+        None => &app.raiz_vista,
     };
     let escena = Escena {
         centro: r.centro,

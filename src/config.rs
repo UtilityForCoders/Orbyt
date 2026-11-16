@@ -39,7 +39,7 @@ pub enum Modo {
     Clic,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Acceso {
     /// Texto que se ve en el sector.
     pub nombre: String,
@@ -52,11 +52,18 @@ pub struct Acceso {
     /// (el de la app, el favicon de la web...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icono: Option<String>,
+    /// Abrir como administrador (Windows pide confirmación cada vez).
+    #[serde(default, skip_serializing_if = "es_falso")]
+    pub admin: bool,
+}
+
+fn es_falso(v: &bool) -> bool {
+    !*v
 }
 
 /// Un grupo de accesos: en la rueda es una baldosa que, al elegirla, se abre y muestra sus
 /// accesos. La rueda principal solo tiene grupos.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Grupo {
     pub nombre: String,
     /// Ícono elegido a mano (`lucide:...` o `archivo:...`). Sin él, la baldosa muestra en
@@ -65,6 +72,31 @@ pub struct Grupo {
     pub icono: Option<String>,
     #[serde(default)]
     pub accesos: Vec<Acceso>,
+    /// Programas (por el nombre de su ejecutable, `code.exe`) en los que aparece el grupo. Vacío:
+    /// aparece siempre. Así la rueda cambia según el programa que haya delante.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub solo_en: Vec<String>,
+}
+
+impl Grupo {
+    /// ¿Se muestra el grupo con este programa delante? `exe` va en minúsculas.
+    pub fn visible_en(&self, exe: Option<&str>) -> bool {
+        self.solo_en.iter().all(|s| s.trim().is_empty())
+            || exe.is_some_and(|e| self.solo_en.iter().any(|s| s.trim().eq_ignore_ascii_case(e)))
+    }
+}
+
+/// Separa una lista escrita a mano (`code.exe, blender.exe`) en nombres de ejecutable en
+/// minúsculas, sin repetidos ni vacíos.
+pub fn lista_programas(texto: &str) -> Vec<String> {
+    let mut lista: Vec<String> = Vec::new();
+    for parte in texto.split([',', ';']) {
+        let nombre = parte.trim().trim_matches('"').trim().to_lowercase();
+        if !nombre.is_empty() && !lista.contains(&nombre) {
+            lista.push(nombre);
+        }
+    }
+    lista
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +111,20 @@ pub struct Config {
     pub boton: Boton,
     #[serde(default = "modo_defecto")]
     pub modo: Modo,
+    /// Atajo de teclado que abre la rueda (`Ctrl+Alt+Espacio`), además del botón del ratón. Con
+    /// él la rueda queda abierta y se elige con clic o con el teclado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atajo: Option<String>,
+    /// En modo soltar, cuánto hay que apuntar a un grupo para que se abra.
+    #[serde(default = "espera_grupo_defecto")]
+    pub espera_grupo_ms: u32,
+    /// En modo soltar, cuánto hay que quedarse en el centro de un grupo para volver.
+    #[serde(default = "espera_volver_defecto")]
+    pub espera_volver_ms: u32,
+    /// Si el programa de un acceso ya tiene una ventana abierta, se trae al frente en lugar de
+    /// abrir otra.
+    #[serde(default = "si")]
+    pub enfocar_abiertas: bool,
     /// Escala de la rueda: 1.0 es el tamaño normal.
     #[serde(default = "tamano_defecto")]
     pub tamano: f32,
@@ -100,8 +146,9 @@ pub struct Config {
     pub excluidas: Vec<String>,
     #[serde(default = "opacidad_fondo_defecto")]
     pub opacidad_fondo: f32, // 0.1–1.0, afecta fondo de segmentos
+    /// Color (RGB) del botón al que se apunta.
     #[serde(default = "color_hover_defecto")]
-    pub color_hover: [u8; 3], // RGB del color de resaltado (default: violeta grisáceo 72,64,96)
+    pub color_hover: [u8; 3],
     /// Los grupos de la rueda principal.
     #[serde(default)]
     pub grupos: Vec<Grupo>,
@@ -125,6 +172,14 @@ fn boton_defecto() -> Boton {
 
 fn modo_defecto() -> Modo {
     Modo::Soltar
+}
+
+fn espera_grupo_defecto() -> u32 {
+    450
+}
+
+fn espera_volver_defecto() -> u32 {
+    300
 }
 
 fn tamano_defecto() -> f32 {
@@ -159,15 +214,26 @@ pub const ZONA_MIN: f32 = 20.0;
 pub const ZONA_MAX: f32 = 60.0;
 pub const OPACIDAD_MIN: f32 = 0.1;
 pub const OPACIDAD_MAX: f32 = 1.0;
-#[allow(dead_code)]
-pub const ACCESOS_MAX: usize = 8;
-#[allow(dead_code)]
-pub const ACCESOS_MIN: usize = 2;
+pub const ESPERA_GRUPO_MIN: u32 = 150;
+pub const ESPERA_GRUPO_MAX: u32 = 1500;
+pub const ESPERA_VOLVER_MIN: u32 = 100;
+pub const ESPERA_VOLVER_MAX: u32 = 1000;
 
 impl Config {
     /// Lleva cada valor a su rango; un JSON editado a mano no puede romper la rueda.
     pub fn normalizar(&mut self) {
         self.retardo_ms = self.retardo_ms.clamp(RETARDO_MIN, RETARDO_MAX);
+        self.espera_grupo_ms = self.espera_grupo_ms.clamp(ESPERA_GRUPO_MIN, ESPERA_GRUPO_MAX);
+        self.espera_volver_ms = self.espera_volver_ms.clamp(ESPERA_VOLVER_MIN, ESPERA_VOLVER_MAX);
+        self.atajo = self
+            .atajo
+            .take()
+            .map(|a| a.trim().to_string())
+            .filter(|a| !a.is_empty());
+        self.excluidas = lista_programas(&self.excluidas.join(","));
+        for g in &mut self.grupos {
+            g.solo_en = lista_programas(&g.solo_en.join(","));
+        }
         self.tamano = if self.tamano.is_finite() {
             self.tamano.clamp(TAMANO_MIN, TAMANO_MAX)
         } else {
@@ -190,8 +256,8 @@ impl Config {
                 0,
                 Grupo {
                     nombre: "Principal".into(),
-                    icono: None,
                     accesos,
+                    ..Default::default()
                 },
             );
         }
@@ -203,14 +269,17 @@ impl Default for Config {
         let acceso = |nombre: &str, destino: &str| Acceso {
             nombre: nombre.into(),
             destino: destino.into(),
-            argumentos: None,
-            icono: None,
+            ..Default::default()
         };
         Config {
             abrir_en: abrir_en_defecto(),
             retardo_ms: retardo_defecto(),
             boton: boton_defecto(),
             modo: modo_defecto(),
+            atajo: None,
+            espera_grupo_ms: espera_grupo_defecto(),
+            espera_volver_ms: espera_volver_defecto(),
+            enfocar_abiertas: true,
             tamano: tamano_defecto(),
             zona_central: zona_defecto(),
             oscurecer: true,
@@ -232,6 +301,7 @@ impl Default for Config {
                         acceso("Descargas", "%USERPROFILE%\\Downloads"),
                         acceso("Ajustes", "ms-settings:"),
                     ],
+                    ..Default::default()
                 },
                 Grupo {
                     nombre: "Multimedia".into(),
@@ -241,6 +311,7 @@ impl Default for Config {
                         acceso("Twitch", "https://www.twitch.tv"),
                         acceso("Kick", "https://kick.com"),
                     ],
+                    ..Default::default()
                 },
                 Grupo {
                     nombre: "Agentes de IA".into(),
@@ -250,6 +321,7 @@ impl Default for Config {
                         acceso("ChatGPT", "https://chatgpt.com"),
                         acceso("Gemini", "https://gemini.google.com"),
                     ],
+                    ..Default::default()
                 },
             ],
             accesos: Vec::new(),
@@ -266,19 +338,21 @@ pub fn ruta() -> PathBuf {
 
 /// Lee la configuración. Si no hay archivo, lo crea con los valores por defecto.
 pub fn cargar() -> Config {
+    leer().0
+}
+
+/// Como `cargar`, pero además devuelve el error si `config.json` está mal escrito (y por eso se
+/// están usando los valores por defecto), para poder avisar.
+pub fn leer() -> (Config, Option<String>) {
     let ruta = ruta();
     match std::fs::read_to_string(&ruta) {
-        Ok(texto) => match serde_json::from_str::<Config>(&texto) {
-            Ok(mut cfg) => {
-                cfg.normalizar();
-                cfg
-            }
+        Ok(texto) => match interpretar(&texto) {
+            Ok(cfg) => (cfg, None),
             Err(e) => {
-                eprintln!("config.json inválido ({e}); se usan los valores por defecto");
                 // Se guarda una copia: al cambiar algo en los ajustes se escribe un config.json
                 // nuevo, y sin ella se perderían los accesos del archivo mal escrito.
                 let _ = std::fs::copy(&ruta, ruta.with_file_name("config.invalido.json"));
-                Config::default()
+                (Config::default(), Some(e))
             }
         },
         Err(_) => {
@@ -289,9 +363,29 @@ pub fn cargar() -> Config {
             if let Ok(json) = serde_json::to_string_pretty(&cfg) {
                 let _ = escribir(&ruta, &json);
             }
-            cfg
+            (cfg, None)
         }
     }
+}
+
+/// Convierte el texto de un `config.json` en una configuración con todos los valores en rango.
+pub fn interpretar(texto: &str) -> Result<Config, String> {
+    // Algunos editores dejan la marca BOM al principio; serde_json no la acepta.
+    let mut cfg: Config = serde_json::from_str(texto.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
+    cfg.normalizar();
+    Ok(cfg)
+}
+
+/// Guarda una copia de la configuración en otro archivo (exportar).
+pub fn exportar(cfg: &Config, destino: &std::path::Path) -> std::io::Result<()> {
+    let json = serde_json::to_string_pretty(cfg).map_err(std::io::Error::other)?;
+    std::fs::write(destino, json)
+}
+
+/// Lee una configuración exportada. No toca `config.json`: quien llama decide si la guarda.
+pub fn importar(origen: &std::path::Path) -> Result<Config, String> {
+    let texto = std::fs::read_to_string(origen).map_err(|e| e.to_string())?;
+    interpretar(&texto)
 }
 
 /// Escribe la configuración en disco (la usa la ventana de configuración).
@@ -370,6 +464,56 @@ mod tests {
         assert!(cfg.excluidas.is_empty());
         assert_eq!(cfg.opacidad_fondo, 0.88);
         assert_eq!(cfg.color_hover, [72, 64, 96]);
+        assert_eq!(cfg.atajo, None);
+        assert_eq!(cfg.espera_grupo_ms, 450);
+        assert_eq!(cfg.espera_volver_ms, 300);
+        assert!(cfg.enfocar_abiertas);
+    }
+
+    #[test]
+    fn un_grupo_con_programas_solo_sale_en_ellos() {
+        let mut g = Grupo {
+            nombre: "Editor".into(),
+            ..Default::default()
+        };
+        assert!(g.visible_en(None));
+        assert!(g.visible_en(Some("code.exe")));
+        g.solo_en = vec!["Code.exe".into(), " blender.exe ".into()];
+        assert!(g.visible_en(Some("code.exe")));
+        assert!(g.visible_en(Some("blender.exe")));
+        assert!(!g.visible_en(Some("chrome.exe")));
+        assert!(!g.visible_en(None));
+    }
+
+    #[test]
+    fn la_lista_de_programas_se_limpia() {
+        assert_eq!(
+            lista_programas(" Code.exe, blender.exe;;code.exe , \"a b.exe\""),
+            ["code.exe", "blender.exe", "a b.exe"]
+        );
+        assert!(lista_programas("  ").is_empty());
+    }
+
+    #[test]
+    fn interpretar_normaliza_y_acepta_bom() {
+        let cfg =
+            interpretar("\u{feff}{\"retardo_ms\":5,\"atajo\":\"  \",\"excluidas\":[\"A.EXE\",\"a.exe\"]}").unwrap();
+        assert_eq!(cfg.retardo_ms, RETARDO_MIN);
+        assert_eq!(cfg.atajo, None);
+        assert_eq!(cfg.excluidas, ["a.exe"]);
+        assert!(interpretar("{mal").is_err());
+    }
+
+    #[test]
+    fn admin_solo_se_escribe_si_esta_activo() {
+        let mut a = Acceso {
+            nombre: "T".into(),
+            destino: "cmd.exe".into(),
+            ..Default::default()
+        };
+        assert!(serde_json::to_value(&a).unwrap().get("admin").is_none());
+        a.admin = true;
+        assert_eq!(serde_json::to_value(&a).unwrap()["admin"], true);
     }
 
     #[test]
@@ -403,7 +547,7 @@ mod tests {
     #[test]
     fn normalizar_lleva_los_valores_a_su_rango() {
         let mut cfg: Config = serde_json::from_str(
-            r#"{"retardo_ms":5,"tamano":9.0,"zona_central":-3,"opacidad_fondo":0.0,"accesos":[]}"#,
+            r#"{"retardo_ms":5,"tamano":9.0,"zona_central":-3,"opacidad_fondo":0.0,"espera_grupo_ms":1,"espera_volver_ms":99999,"accesos":[]}"#,
         )
         .unwrap();
         cfg.normalizar();
@@ -411,5 +555,7 @@ mod tests {
         assert_eq!(cfg.tamano, TAMANO_MAX);
         assert_eq!(cfg.zona_central, ZONA_MIN);
         assert_eq!(cfg.opacidad_fondo, OPACIDAD_MIN);
+        assert_eq!(cfg.espera_grupo_ms, ESPERA_GRUPO_MIN);
+        assert_eq!(cfg.espera_volver_ms, ESPERA_VOLVER_MAX);
     }
 }
